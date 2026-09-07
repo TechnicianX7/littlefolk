@@ -43,15 +43,25 @@ try {
       await page.locator('[data-close="settingsBack"]').tap();await page.reload();await page.waitForFunction(()=>!!window.__littlefolk);assert.equal(await page.evaluate(()=>window.__littlefolk.state.folk.length),2,'Save survives reload');
       assert.equal(await page.locator('#welcomeBack').isVisible(),false,'Restored villages skip welcome');
       await page.evaluate(()=>navigator.serviceWorker.ready);await page.waitForFunction(()=>navigator.serviceWorker.controller!==null);
-      await context.setOffline(true);await page.reload();await page.waitForFunction(()=>!!window.__littlefolk);assert.equal(await page.evaluate(()=>window.__littlefolk.state.folk.length),2,'Offline reload retains village');
+      const previousDocument=await page.evaluate(()=>performance.timeOrigin);
+      if(name==='chromium')await context.setOffline(true);
+      else {
+        // WebKit's emulated offline navigation produced an internal browser error.
+        // Disconnect the real origin instead, so only the service-worker cache can serve it.
+        await new Promise(r=>server.close(r));
+        await assert.rejects(fetch('http://127.0.0.1:4173/littlefolk/'));
+      }
+      await page.reload();await page.waitForFunction(()=>!!window.__littlefolk);
+      assert.notEqual(await page.evaluate(()=>performance.timeOrigin),previousDocument,'Offline check loaded a new document');
+      assert.equal(await page.evaluate(()=>window.__littlefolk.state.folk.length),2,'Cached reload retains village without a reachable server');
       await page.setViewportSize({width:1024,height:1366});await page.screenshot({path:`artifacts/${name}-portrait.png`});
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'No horizontal overflow');
       await page.setViewportSize({width:390,height:844});await page.screenshot({path:`artifacts/${name}-phone.png`});
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
       assert.equal(await page.locator('#fatal').isVisible(),false);assert.deepEqual(errors,[]);
-      results.push({engine:name,result:'passed',coverage:['touch build','autonomous gathering','second resident','camera controls','gathering stories','save export','reload recovery','offline reload','tablet landscape','tablet portrait','phone layout']});
+      results.push({engine:name,result:'passed',offlineMethod:name==='chromium'?'browser offline emulation':'origin server stopped',coverage:['touch build','autonomous gathering','second resident','camera controls','gathering stories','save export','reload recovery','cached reload without server access','tablet landscape','tablet portrait','phone layout']});
     }catch(error){await page.screenshot({path:`artifacts/${name}-failure.png`}).catch(()=>{});results.push({engine:name,result:'failed',error:String(error),pageErrors:errors});throw error;}
     finally{await context.close();await browser.close();}
   }
-}finally{await writeFile('artifacts/browser-results.json',JSON.stringify(results,null,2));await new Promise(r=>server.close(r));}
+}finally{await writeFile('artifacts/browser-results.json',JSON.stringify(results,null,2));if(server.listening)await new Promise(r=>server.close(r));}
 console.log(JSON.stringify(results,null,2));
