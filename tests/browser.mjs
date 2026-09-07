@@ -23,20 +23,16 @@ try {
       await page.touchscreen.tap(home.x,home.y);
       assert.equal(await page.evaluate(()=>window.__littlefolk.state.folk.length),1,'Touch builds a first hut');
       await page.evaluate(()=>window.__littlefolk.advance(180));
-      let state=await page.evaluate(()=>({wood:window.__littlefolk.state.wood,stone:window.__littlefolk.state.stone,delivered:window.__littlefolk.state.delivered}));
+      const state=await page.evaluate(()=>({wood:window.__littlefolk.state.wood,stone:window.__littlefolk.state.stone,delivered:window.__littlefolk.state.delivered}));
       assert.ok(state.wood>0&&state.stone>0,'Both resources are collected');
       await page.screenshot({path:`artifacts/${name}-first-village.png`});
-      // Find an unoccupied visible site rather than depending on a worker being elsewhere.
-      const site=await page.evaluate(async()=>{const {placement}=await import('../littlefolk/world.js');const api=window.__littlefolk;for(let i=0;i<4&&(api.state.wood<18||api.state.stone<8);i++)api.advance(60);for(const [x,y] of [[24,19],[17,14],[24,14],[19,15]])if(placement(api.state,'hut',x,y).ok)return {x,y};throw new Error('No second hut site');});
+      const site=await page.evaluate(async()=>{const {placement}=await import('./world.js');const api=window.__littlefolk;for(let i=0;i<4&&(api.state.wood<18||api.state.stone<8);i++)api.advance(60);for(const [x,y] of [[24,19],[17,14],[24,14],[19,15]])if(placement(api.state,'hut',x,y).ok)return {x,y};throw new Error('No second hut site');});
       await page.locator('[data-build="hut"]').tap();const point=await page.evaluate(({x,y})=>window.__littlefolk.screenOf(x+.5,y+.5),site);await page.touchscreen.tap(point.x,point.y);
       assert.equal(await page.evaluate(()=>window.__littlefolk.state.folk.length),2);
-      // Exercise one-finger panning and ensure a drag does not build by accident.
       const cameraBefore=await page.evaluate(()=>window.__littlefolk.camera.x);
-      await page.evaluate(()=>{const c=document.getElementById('world');c.dispatchEvent(new PointerEvent('pointerdown',{pointerId:77,clientX:700,clientY:400,button:0,bubbles:true}));});
-      // Use native mouse movement for capture-backed drag coverage.
       await page.mouse.move(700,420);await page.mouse.down();await page.mouse.move(790,450,{steps:8});await page.mouse.up();
-      await page.locator('#centerBtn').tap();
-      await page.locator('#zoomIn').tap();await page.locator('#zoomOut').tap();
+      assert.notEqual(await page.evaluate(()=>window.__littlefolk.camera.x),cameraBefore,'Dragging pans the map');
+      await page.locator('#centerBtn').tap();await page.locator('#zoomIn').tap();await page.locator('#zoomOut').tap();
       await page.evaluate(()=>{const api=window.__littlefolk;if(api.state.meeting)api.advance(30);if(api.state.t-api.state.lastBell<71)api.advance(75);});
       await page.locator('#bellBtn').tap();assert.ok(await page.evaluate(()=>window.__littlefolk.state.meeting));
       await page.evaluate(()=>window.__littlefolk.advance(16));
