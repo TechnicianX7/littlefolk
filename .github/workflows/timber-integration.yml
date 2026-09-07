@@ -1,0 +1,86 @@
+name: Timber integration
+on:
+  push:
+    branches: [build/timber-tinkering]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: timber-integration-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  integrate:
+    if: github.ref == 'refs/heads/build/timber-tinkering'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply the exact-source upgrade
+        shell: bash
+        run: |
+          if grep -q 'export const VERSION = 1;' world.js; then
+            python3 tools/upgrade_v2.py
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tests/browser.mjs')
+          t=p.read_text()
+          if "'.css':'text/css'" not in t:
+              t=t.replace("'.js':'text/javascript',", "'.js':'text/javascript','.css':'text/css',")
+          p.write_text(t)
+          p=Path('README.md')
+          t=p.read_text()
+          if '## Timber & Tinkering' not in t:
+              t=t.replace('# Littlefolk\n', '# Littlefolk\n\n## Timber & Tinkering\n\n**Version 2.0.0 adds a cozy woodland factory:** ten new buildings, real cargo wagons, buffered production chains, renewable wind power, three research chapters, and the star-post office. The original village and lantern gatherings remain.\n\nSee **[the complete update guide](TIMBER.md)** for save-safe installation, your first production loop, recipes, logistics, stability changes, and testing. Export an existing village before updating. Version 2 migrates it automatically and preserves the original version 1 storage keys.\n\nThe original village introduction follows; where version-specific details differ, the update guide takes precedence.\n')
+              t=t.replace('Buildings cannot yet be demolished or moved.', 'Version 2 can reclaim non-residential buildings and recover their goods; homes remain protected. Building movement and path removal are not implemented.')
+              t=t.replace('node --test tests/world.test.mjs', 'node --test tests/*.test.mjs')
+          p.write_text(t)
+          PY
+      - name: Check JavaScript
+        run: npm run check
+      - name: Test all village and factory simulation rules
+        shell: bash
+        run: node --test tests/*.test.mjs | tee unit-results.txt
+      - name: Prepare browser tests
+        run: |
+          npm install --no-save --ignore-scripts playwright
+          npx playwright install --with-deps chromium webkit
+      - name: Test original village and offline cache
+        run: node tests/browser.mjs
+      - name: Test touch factories, frame recovery and legacy saves
+        run: node tests/timber.browser.mjs
+      - name: Commit only tested integration changes to the development branch
+        shell: bash
+        run: |
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app.js world.js index.html sw.js package.json .github/workflows/check.yml tests/browser.mjs README.md
+          if ! git diff --cached --quiet; then
+            git commit -m 'Release tested Littlefolk 2.0: Timber & Tinkering'
+            git push origin HEAD:build/timber-tinkering
+          fi
+          git rev-parse HEAD
+      - name: Retain sources, test reports and browser screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: timber-checked-build
+          retention-days: 7
+          path: |
+            app.js
+            world.js
+            index.html
+            sw.js
+            industry.js
+            industry-ui.js
+            industry.css
+            manifest.webmanifest
+            icon.svg
+            package.json
+            README.md
+            TIMBER.md
+            tests/
+            tools/upgrade_v2.py
+            artifacts/
+            unit-results.txt
