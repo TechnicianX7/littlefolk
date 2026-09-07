@@ -1,7 +1,7 @@
 name: Village checks
 on:
   push:
-    branches: [main, release/timber-2.0]
+    branches: [main, release/room-to-grow-2.1]
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,7 +18,7 @@ jobs:
           persist-credentials: false
       - name: Check JavaScript
         run: npm run check
-      - name: Test the village and industry simulations
+      - name: Test village, industry and land simulation
         shell: bash
         run: |
           set -o pipefail
@@ -31,6 +31,8 @@ jobs:
         run: node tests/browser.mjs
       - name: Test supply chains, touch recovery and legacy villages
         run: node tests/timber.browser.mjs
+      - name: Test intuitive controls, clearing, movement and panel layout
+        run: node tests/qol.browser.mjs
       - name: Keep source and visual test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -44,12 +46,15 @@ jobs:
             industry.js
             industry-ui.js
             industry.css
+            qol-ui.js
+            qol.css
             sw.js
             manifest.webmanifest
             icon.svg
             package.json
             README.md
             TIMBER.md
+            ROOM-TO-GROW.md
             tests/
             artifacts/
             unit-results.txt
