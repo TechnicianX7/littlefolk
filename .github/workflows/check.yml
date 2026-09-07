@@ -1,0 +1,43 @@
+name: Village checks
+on:
+  push:
+    branches: [main, build/first-village]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: village-checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check JavaScript
+        run: npm run check
+      - name: Test the village simulation
+        run: node --test tests/world.test.mjs | tee unit-results.txt
+      - name: Prepare browser tests
+        run: |
+          npm install --no-save --ignore-scripts playwright
+          npx playwright install --with-deps chromium webkit
+      - name: Test tablet controls, saves and offline play
+        run: node tests/browser.mjs
+      - name: Keep source and visual test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: littlefolk-checked-build
+          retention-days: 7
+          path: |
+            index.html
+            app.js
+            world.js
+            sw.js
+            manifest.webmanifest
+            icon.svg
+            package.json
+            tests/
+            artifacts/
+            unit-results.txt
