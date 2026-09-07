@@ -1,5 +1,6 @@
 /* Littlefolk simulation. Pure JavaScript: no browser, network, or runtime dependencies. */
-export const VERSION = 1;
+import { EXTRA_BUILDINGS, configureIndustry, initIndustry, industryPlacement, industryPay, industryBuilt, stepIndustry, restoreIndustry } from './industry.js';
+export const VERSION = 2;
 export const W = 44, H = 34, TILE = 16;
 export const BUILDINGS = {
   hut: { name: 'Wooden hut', short: 'Hut', w: 2, h: 2, wood: 18, stone: 8, unlock: 0, desc: 'A snug home. A new littlefolk moves in and finds their own work.' },
@@ -10,6 +11,7 @@ export const BUILDINGS = {
   garden: { name: 'Wildflower garden', short: 'Garden', w: 2, h: 2, wood: 20, stone: 12, unlock: 80, desc: 'Flowers, butterflies, and somewhere to take a tiny, well-earned break.' },
   workshop: { name: 'Tool workshop', short: 'Workshop', w: 2, h: 2, wood: 45, stone: 30, unlock: 115, desc: 'Unlocks better tools for everyone. Tap the finished workshop to upgrade.' }
 };
+Object.assign(BUILDINGS, EXTRA_BUILDINGS);
 export const COLORS = ['#f1b16f', '#92c5ac', '#b6a0d4', '#edca70', '#91bbd7', '#e99eac', '#c4ce82', '#daa385'];
 const NAMES = ['Pip', 'Moss', 'Fig', 'Clover', 'Pebble', 'Tansy', 'Nim', 'Button', 'Fern', 'Mochi', 'Poppy', 'Bramble', 'Mallow', 'Wisp', 'Juniper', 'Bean', 'Luma', 'Acorn', 'Basil', 'Bumble', 'Fennel', 'Nori', 'Dew', 'Maple'];
 export const idx = (x, y) => y * W + x;
@@ -31,14 +33,23 @@ export function createWorld(seed = 41728) {
     s.tiles.push({ ground: water ? 'water' : 'grass', detail: hash(x + 99, y, seed), node, path: false });
   }
   [[16,17,'tree'],[19,12,'tree'],[27,19,'tree'],[25,23,'tree'],[18,23,'stone'],[27,16,'stone']].forEach(([x,y,type]) => { at(s,x,y).ground = 'grass'; at(s,x,y).node = {type,amount:18,rest:0}; });
-  return s;
+  s.topology=0;initIndustry(s);return s;
 }
 export function buildingAt(s, x, y) { return s.buildings.find(b => { const d = BUILDINGS[b.type]; return x >= b.x && y >= b.y && x < b.x + d.w && y < b.y + d.h; }); }
+const spatial = new WeakMap();
+function blockedAt(s,x,y){
+  let cache=spatial.get(s);
+  if(!cache||cache.revision!==s.topology||cache.count!==s.buildings.length){
+    const cells=new Uint8Array(W*H);
+    for(const b of s.buildings){const d=BUILDINGS[b.type];for(let y=b.y;y<b.y+d.h;y++)for(let x=b.x;x<b.x+d.w;x++)cells[idx(x,y)]=1;}
+    cache={cells,revision:s.topology,count:s.buildings.length};spatial.set(s,cache);
+  }return cache.cells[idx(x,y)]===1;
+}
 export function walkable(s, x, y, extra = null) {
   if (!inside(x,y)) return false;
   if (extra && x >= extra.x && y >= extra.y && x < extra.x + extra.w && y < extra.y + extra.h) return false;
   const t = at(s,x,y);
-  return t.ground !== 'water' && !t.node && !buildingAt(s,x,y) && !(x === s.hearth.x && y === s.hearth.y);
+  return t.ground !== 'water' && !t.node && !blockedAt(s,x,y) && !(x === s.hearth.x && y === s.hearth.y);
 }
 function neighbors(x,y) { return [[x,y+1],[x+1,y],[x-1,y],[x,y-1]].filter(([a,b]) => inside(a,b)); }
 function rim(s, x,y,w=1,h=1,extra=null) {
@@ -65,9 +76,11 @@ export function findPath(s, from, goals) {
   const path=[]; for(let i=end;i!==start;i=prev[i])path.push({x:i%W+.5,y:Math.floor(i/W)+.5});
   path.reverse(); return path;
 }
-export function cost(s,type) { const d=BUILDINGS[type]; return type==='hut'&&!s.buildings.some(b=>b.type==='hut') ? {wood:0,stone:0} : {wood:d.wood,stone:d.stone}; }
+export function cost(s,type) { const d=BUILDINGS[type]; return type==='hut'&&!s.buildings.some(b=>b.type==='hut') ? {wood:0,stone:0} : {wood:d.wood,stone:d.stone,...d.extra}; }
 export function placement(s,type,x,y) {
   const d=BUILDINGS[type]; if(!d)return {ok:false,reason:'Choose a building first.'};
+  if(!Number.isInteger(x)||!Number.isInteger(y))return {ok:false,reason:'Choose a map tile.'};
+  const industryReason=industryPlacement(s,type,x,y);if(industryReason)return {ok:false,reason:industryReason};
   if(s.delivered<d.unlock)return {ok:false,reason:`Unlocks after ${d.unlock} materials have come home (${s.delivered} so far).`};
   if(type==='hut' && s.folk.length>=24)return {ok:false,reason:'This little island has room for 24 friends.'};
   if(type==='workshop'&&s.buildings.some(b=>b.type==='workshop'))return {ok:false,reason:'One workshop is enough for this village.'};
@@ -103,11 +116,11 @@ function spawn(s,b) {
 }
 export function place(s,type,x,y) {
   const test=placement(s,type,x,y);if(!test.ok)return test;
-  const c=cost(s,type);s.wood-=c.wood;s.stone-=c.stone;
+  const c=cost(s,type);s.wood-=c.wood;s.stone-=c.stone;industryPay(s,type);
   if(type==='path')at(s,x,y).path=true;
-  else {const b={id:s.nextId++,type,x,y,level:1};s.buildings.push(b);if(type==='hut')spawn(s,b);}
+  else {const b={id:s.nextId++,type,x,y,level:1};s.buildings.push(b);s.topology=(s.topology||0)+1;industryBuilt(s,b);if(type==='hut')spawn(s,b);}
   // Construction can intersect old routes; recalculate without discarding carried materials.
-  for(const f of s.folk){f.path=[];f.target=null;f.mode='idle';f.timer=.1;}
+  if(type!=='path')for(const f of s.folk){f.path=[];f.target=null;f.mode='idle';f.timer=.1;}
   emit(s,'build',{x:x+.5,y:y+.5,building:type});return {ok:true};
 }
 export function upgrade(s,id) {
@@ -203,6 +216,7 @@ export function step(s,dt) {
     if(f.mode==='rest'){f.timer-=dt;if(f.timer<=0){f.mode='idle';f.timer=.2;}continue;}
     f.timer-=dt;if(f.timer<=0)findWork(s,f);
   }
+  stepIndustry(s,dt);
   for(const [type,d] of Object.entries(BUILDINGS))if(d.unlock>0&&s.delivered>=d.unlock&&!s.knownUnlocks.includes(type)){s.knownUnlocks.push(type);emit(s,'unlock',{name:d.name,type});}
 }
 export function describeFolk(s,f){
@@ -212,12 +226,12 @@ export function describeFolk(s,f){
 }
 export function snapshot(s) {const copy=JSON.parse(JSON.stringify(s));copy.events=[];copy.savedAt=Date.now();return copy;}
 export function restore(raw) {
-  if(!raw||raw.version!==VERSION||!Array.isArray(raw.tiles)||raw.tiles.length!==W*H)throw new Error('This is not a Littlefolk version 1 save.');
+  if(!raw||![1,VERSION].includes(raw.version)||!Array.isArray(raw.tiles)||raw.tiles.length!==W*H)throw new Error('This is not a supported Littlefolk save.');
   if(!Array.isArray(raw.buildings)||raw.buildings.length>200||!Array.isArray(raw.folk)||raw.folk.length>24)throw new Error('This village save is too large or incomplete.');
   const finite=(v,lo,hi)=>typeof v==='number'&&Number.isFinite(v)&&v>=lo&&v<=hi;
   for(const k of ['t','wood','stone','delivered'])if(!finite(raw[k],0,1e12))throw new Error('Invalid village totals.');
   if(!finite(raw.tools,0,2)||!Number.isInteger(raw.tools)||!finite(raw.nextId,1,1e9)||!finite(raw.seed,1,4294967295)||!finite(raw.rng,0,4294967295))throw new Error('Invalid village state.');
-  const s=createWorld(raw.seed);Object.assign(s,raw);s.events=[];s.meeting=null;s.hearth={x:22,y:17};
+  const s=createWorld(raw.seed);Object.assign(s,raw);s.version=VERSION;s.topology=0;s.events=[];s.meeting=null;s.hearth={x:22,y:17};
   s.tiles=raw.tiles.map(t=>{if(!t||!['grass','water'].includes(t.ground)||!finite(t.detail,0,1))throw new Error('Invalid map tile.');let node=null;if(t.node){if(!['tree','stone'].includes(t.node.type)||!finite(t.node.amount,0,100)||!finite(t.node.rest,0,1000))throw new Error('Invalid resource.');node={type:t.node.type,amount:t.node.amount,rest:t.node.rest};}return {ground:t.ground,detail:t.detail,node,path:!!t.path};});
   const used=new Set();
   s.buildings=raw.buildings.map(b=>{const d=BUILDINGS[b.type];if(!d||b.type==='path'||!finite(b.x,0,W-d.w)||!finite(b.y,0,H-d.h)||!Number.isInteger(b.x)||!Number.isInteger(b.y)||!finite(b.id,1,1e9)||!finite(b.level,1,3)||used.has(b.id))throw new Error('Invalid building.');used.add(b.id);return {id:b.id,type:b.type,x:b.x,y:b.y,level:b.level};});
@@ -229,5 +243,6 @@ export function restore(raw) {
   s.nextId=Math.max(s.nextId,...used)+1;
   s.memories=(Array.isArray(raw.memories)?raw.memories:[]).slice(0,60).map(m=>({day:finite(m.day,1,1e10)?Math.floor(m.day):1,who:String(m.who||'The village').slice(0,24),text:String(m.text||'').slice(0,300),time:finite(m.time,0,1e12)?m.time:0}));
   s.knownUnlocks=Object.keys(BUILDINGS).filter(k=>s.delivered>=BUILDINGS[k].unlock&&BUILDINGS[k].unlock>0);s.firstLog=!!raw.firstLog;s.lastBell=finite(raw.lastBell,-1000,1e12)?raw.lastBell:-1000;s.lastDusk=finite(raw.lastDusk,-1,1e10)?raw.lastDusk:-1;
-  return s;
+  restoreIndustry(s,raw);return s;
 }
+configureIndustry({W,H,BUILDINGS,walkable,findPath,remember});

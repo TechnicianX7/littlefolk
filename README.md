@@ -1,5 +1,13 @@
 # Littlefolk
 
+## Timber & Tinkering
+
+**Version 2.0.0 adds a cozy woodland factory:** ten new buildings, real cargo wagons, buffered production chains, renewable wind power, three research chapters, and the star-post office. The original village and lantern gatherings remain.
+
+See **[the complete update guide](TIMBER.md)** for save-safe installation, your first production loop, recipes, logistics, stability changes, and testing. Export an existing village before updating. Version 2 migrates it automatically and preserves the original version 1 storage keys.
+
+The original village introduction follows; where version-specific details differ, the update guide takes precedence.
+
 **A small world, all its own.** A cozy, autonomous pixel-art village built for touchscreens, Safari, and iPad home screens.
 
 Play after the Pages deployment completes: **https://TechnicianX7.github.io/littlefolk/**
@@ -49,7 +57,7 @@ The village is stored locally in this browser or installed web app. Automatic sa
 
 Use **Settings → Export save** for a portable backup. Clearing website data or uninstalling the home-screen app can remove local saves. Neither the main save nor its local backup is cloud storage. Saves do not sync between devices.
 
-The village pauses while the page is hidden, a dialog is open, or the app is closed. There is no background simulation, offline resource catch-up, hunger, or absence penalty in version 1. Buildings cannot yet be demolished or moved.
+The village pauses while the page is hidden, a dialog is open, or the app is closed. There is no background simulation, offline resource catch-up, hunger, or absence penalty in version 1. Version 2 can reclaim non-residential buildings and recover their goods; homes remain protected. Building movement and path removal are not implemented.
 
 The game has no accounts, trackers, advertising, external fonts, external art assets, paid APIs, or runtime package dependencies. Hosting still makes normal requests to GitHub Pages. The source and hosted app are public; player saves are not uploaded.
 
