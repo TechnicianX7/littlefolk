@@ -17,6 +17,7 @@ jobs:
       - name: Check JavaScript
         run: npm run check
       - name: Test the village simulation
+        shell: bash
         run: node --test tests/world.test.mjs | tee unit-results.txt
       - name: Prepare browser tests
         run: |
