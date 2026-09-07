@@ -20,14 +20,14 @@ try {
       await page.screenshot({path:`artifacts/${name}-welcome.png`});
       await page.locator('#beginBtn').tap();
       const home=await page.evaluate(()=>window.__littlefolk.screenOf(20.5,19.5));
-      await page.touchscreen.tap(home.x,home.y);
+      await page.touchscreen.tap(home.x,home.y);await page.locator("#confirmBuild").tap();
       assert.equal(await page.evaluate(()=>window.__littlefolk.state.folk.length),1,'Touch builds a first hut');
       await page.evaluate(()=>window.__littlefolk.advance(180));
       const state=await page.evaluate(()=>({wood:window.__littlefolk.state.wood,stone:window.__littlefolk.state.stone,delivered:window.__littlefolk.state.delivered}));
       assert.ok(state.wood>0&&state.stone>0,'Both resources are collected');
       await page.screenshot({path:`artifacts/${name}-first-village.png`});
       const site=await page.evaluate(async()=>{const {placement}=await import('./world.js');const api=window.__littlefolk;for(let i=0;i<4&&(api.state.wood<18||api.state.stone<8);i++)api.advance(60);for(const [x,y] of [[24,19],[17,14],[24,14],[19,15]])if(placement(api.state,'hut',x,y).ok)return {x,y};throw new Error('No second hut site');});
-      await page.locator('[data-build="hut"]').tap();const point=await page.evaluate(({x,y})=>window.__littlefolk.screenOf(x+.5,y+.5),site);await page.touchscreen.tap(point.x,point.y);
+      await page.locator('[data-build="hut"]').tap();const point=await page.evaluate(({x,y})=>window.__littlefolk.screenOf(x+.5,y+.5),site);await page.touchscreen.tap(point.x,point.y);await page.locator("#confirmBuild").tap();
       assert.equal(await page.evaluate(()=>window.__littlefolk.state.folk.length),2);
       const cameraBefore=await page.evaluate(()=>window.__littlefolk.camera.x);
       await page.mouse.move(700,420);await page.mouse.down();await page.mouse.move(790,450,{steps:8});await page.mouse.up();

@@ -77,15 +77,16 @@ export function findPath(s, from, goals) {
   path.reverse(); return path;
 }
 export function cost(s,type) { const d=BUILDINGS[type]; return type==='hut'&&!s.buildings.some(b=>b.type==='hut') ? {wood:0,stone:0} : {wood:d.wood,stone:d.stone,...d.extra}; }
-export function placement(s,type,x,y) {
+export function placement(s,type,x,y,options={}) {
   const d=BUILDINGS[type]; if(!d)return {ok:false,reason:'Choose a building first.'};
   if(!Number.isInteger(x)||!Number.isInteger(y))return {ok:false,reason:'Choose a map tile.'};
-  const industryReason=industryPlacement(s,type,x,y);if(industryReason)return {ok:false,reason:industryReason};
-  if(s.delivered<d.unlock)return {ok:false,reason:`Unlocks after ${d.unlock} materials have come home (${s.delivered} so far).`};
-  if(type==='hut' && s.folk.length>=24)return {ok:false,reason:'This little island has room for 24 friends.'};
+  const industryReason=industryPlacement(s,type,x,y,options.ignoreCost);if(industryReason)return {ok:false,reason:industryReason};
+  if(!options.ignoreCost&&s.delivered<d.unlock)return {ok:false,reason:`Unlocks after ${d.unlock} materials have come home (${s.delivered} so far).`};
+  if(!options.ignoreCost&&type==='hut' && s.folk.length>=24)return {ok:false,reason:'This little island has room for 24 friends.'};
   if(type==='workshop'&&s.buildings.some(b=>b.type==='workshop'))return {ok:false,reason:'One workshop is enough for this village.'};
   if(!s.folk.length&&type!=='hut')return {ok:false,reason:'Start with a free wooden hut.'};
-  const c=cost(s,type);if(s.wood<c.wood||s.stone<c.stone)return {ok:false,reason:`Needs ${c.wood} wood and ${c.stone} stone.`};
+  if(type!=='path'&&s.buildings.length>=200)return {ok:false,reason:'This island has room for 200 buildings.'};
+  const c=cost(s,type);if(!options.ignoreCost&&(s.wood<c.wood||s.stone<c.stone))return {ok:false,reason:`Needs ${c.wood} wood and ${c.stone} stone.`};
   for(let b=y;b<y+d.h;b++)for(let a=x;a<x+d.w;a++) {
     if(!inside(a,b)||!walkable(s,a,b))return {ok:false,reason:'Find an empty patch of grass, away from water and resources.'};
     if(at(s,a,b).path)return {ok:false,reason:type==='path'?'There is already a path here.':'Leave that footpath open.'};
@@ -149,8 +150,8 @@ function findWork(s,f) {
   const pending={tree:0,stone:0};for(const g of s.folk){if(g.carry)pending[g.carry.type]+=g.carry.amount;if(g.mode==='work'||g.mode==='toResource'){const t=s.tiles[g.target];if(t?.node)pending[t.node.type]+=2;}}
   const need={tree:(24+s.folk.length*8)/(s.wood+pending.tree+4),stone:(16+s.folk.length*5)/(s.stone+pending.stone+4)};
   const candidates=[];
-  for(let i=0;i<s.tiles.length;i++){const n=s.tiles[i].node;if(!n||n.amount<=0)continue;const reserved=s.folk.filter(g=>g.id!==f.id&&g.target===i&&(g.mode==='work'||g.mode==='toResource')).length;if(reserved>=1)continue;
-    const x=i%W,y=Math.floor(i/W),score=need[n.type]*(n.type===f.favorite?1.12:1)/(5+Math.hypot(f.x-x,f.y-y));candidates.push({i,x,y,score});}
+  for(let i=0;i<s.tiles.length;i++){const n=s.tiles[i].node;if(!n||(n.amount<=0&&!n.clear))continue;const reserved=s.folk.filter(g=>g.id!==f.id&&g.target===i&&(g.mode==='work'||g.mode==='toResource')).length;if(reserved>=1)continue;
+    const x=i%W,y=Math.floor(i/W),score=(n.clear?500:need[n.type]*(n.type===f.favorite?1.12:1))/(5+Math.hypot(f.x-x,f.y-y));candidates.push({i,x,y,score});}
   candidates.sort((a,b)=>b.score-a.score);
   for(const c of candidates.slice(0,30)){const p=findPath(s,f,rim(s,c.x,c.y));if(p){setRoute(f,p,'toResource',c.i);return;}}
   f.mode='idle';f.timer=1.5;f.bubble='A little breather.';f.bubbleUntil=s.t+1.5;
@@ -189,7 +190,7 @@ export function step(s,dt) {
   if(!Number.isFinite(dt)||dt<=0)return;dt=Math.min(dt,.25);s.t+=dt;
   const day=Math.floor(s.t/240),phase=s.t%240;
   if(phase>=186&&s.lastDusk!==day){s.lastDusk=day;if(s.folk.length&&!s.meeting)ringBell(s,true);}
-  for(const t of s.tiles)if(t.node&&t.node.amount<=0){t.node.rest-=dt;if(t.node.rest<=0){t.node.amount=t.node.type==='tree'?18:16;t.node.rest=0;}}
+  for(const t of s.tiles)if(t.node&&t.node.amount<=0&&!t.node.clear){t.node.rest-=dt;if(t.node.rest<=0){t.node.amount=t.node.type==='tree'?18:16;t.node.rest=0;}}
   if(s.meeting){
     const m=s.meeting;
     if(s.t>=m.next&&m.stories<3){const present=s.folk.filter(f=>f.mode==='sitting');if(present.length){const f=present[m.stories%present.length],text=story(s,f);f.bubble=text;f.bubbleUntil=s.t+5.5;remember(s,f.name,text);m.stories++;}m.next=s.t+5.5;}
@@ -200,7 +201,7 @@ export function step(s,dt) {
     if(f.mode==='sitting')continue;
     if(['toResource','toStore','toGarden','toGather'].includes(f.mode)){
       if(!move(s,f,dt))continue;
-      if(f.mode==='toResource') {const n=s.tiles[f.target]?.node;if(!n||n.amount<=0){f.mode='idle';f.timer=.1;continue;}const node={x:f.target%W,y:Math.floor(f.target/W)},boost=support(s,n.type==='tree'?'lumber':'quarry',node);f.mode='work';f.timer=(n.type==='tree'?2.4:3.2)/(1+s.tools*.22+(boost?.45:0));f.workTotal=f.timer;}
+      if(f.mode==='toResource') {const n=s.tiles[f.target]?.node;if(!n||(n.amount<=0&&!n.clear)){f.mode='idle';f.timer=.1;continue;}const node={x:f.target%W,y:Math.floor(f.target/W)},boost=support(s,n.type==='tree'?'lumber':'quarry',node);f.mode='work';f.timer=(n.type==='tree'?2.4:3.2)/(1+s.tools*.22+(boost?.45:0));f.workTotal=f.timer;}
       else if(f.mode==='toStore'){
         if(f.carry){const {type,amount}=f.carry;if(type==='tree'){s.wood+=amount;f.wood+=amount;}else{s.stone+=amount;f.stone+=amount;}s.delivered+=amount;f.trips++;emit(s,'delivery',{resource:type,amount,x:f.x,y:f.y});
           if(!s.firstLog){s.firstLog=true;remember(s,f.name,`${f.name} brought home the first ${type==='tree'?'log':'stone'}. It was almost as big as ${f.name}.`);}
@@ -211,7 +212,7 @@ export function step(s,dt) {
       continue;
     }
     if(f.mode==='work'){
-      f.timer-=dt;if(f.timer<=0){const n=s.tiles[f.target]?.node;if(n&&n.amount>0){const boost=support(s,n.type==='tree'?'lumber':'quarry',{x:f.target%W,y:Math.floor(f.target/W)}),amount=Math.min(n.amount,2+s.tools+(boost?1:0));n.amount-=amount;if(n.amount<=0)n.rest=n.type==='tree'?65:90;f.carry={type:n.type,amount};emit(s,'harvest',{resource:n.type,x:f.target%W+.5,y:Math.floor(f.target/W)+.5});}returning(s,f);}continue;
+      f.timer-=dt;if(f.timer<=0){const n=s.tiles[f.target]?.node;if(n&&n.amount>0){const boost=support(s,n.type==='tree'?'lumber':'quarry',{x:f.target%W,y:Math.floor(f.target/W)}),amount=Math.min(n.amount,n.clear?Math.min(6,4+s.tools):2+s.tools+(boost?1:0));n.amount-=amount;if(n.amount<=0)n.rest=n.type==='tree'?65:90;f.carry={type:n.type,amount};emit(s,'harvest',{resource:n.type,x:f.target%W+.5,y:Math.floor(f.target/W)+.5});}const tile=s.tiles[f.target];if(tile?.node?.clear&&tile.node.amount<=0){tile.node=null;s.topology=(s.topology||0)+1;emit(s,'landCleared',{x:f.target%W+.5,y:Math.floor(f.target/W)+.5});}returning(s,f);}continue;
     }
     if(f.mode==='rest'){f.timer-=dt;if(f.timer<=0){f.mode='idle';f.timer=.2;}continue;}
     f.timer-=dt;if(f.timer<=0)findWork(s,f);
@@ -220,10 +221,65 @@ export function step(s,dt) {
   for(const [type,d] of Object.entries(BUILDINGS))if(d.unlock>0&&s.delivered>=d.unlock&&!s.knownUnlocks.includes(type)){s.knownUnlocks.push(type);emit(s,'unlock',{name:d.name,type});}
 }
 export function describeFolk(s,f){
+  if((f.mode==='work'||f.mode==='toResource')&&s.tiles[f.target]?.node?.clear)return f.mode==='work'?'Making room for something new.':'Off to clear a marked patch.';
   if(f.bubble&&s.t<f.bubbleUntil)return f.bubble;
   if(f.mode==='work'||f.mode==='toResource')return s.tiles[f.target]?.node?.type==='tree'?(f.mode==='work'?'Choosing a very good log.':'Off to find some wood.'):(f.mode==='work'?'Looking for the roundest stone.':'Off to gather stones.');
   return {idle:'Taking a tiny breather.',toStore:`Bringing ${f.carry?.amount||0} ${f.carry?.type==='tree'?'wood':'stone'} home.`,toGarden:'Taking the scenic route.',rest:'Making friends with a butterfly.',toGather:'Coming home to the lantern.',sitting:'Together is a nice place to be.'}[f.mode]||'Enjoying being very small.';
 }
+/** Mark a bounded selection for autonomous, permanent clearing. Unmarked resources regrow. */
+export function markClearing(s, cells, clear=true) {
+  if(!s.folk.length)return {ok:false,reason:'Place a hut first. Your folk will clear the land for you.',changed:[]};
+  const ids=[...new Set(cells)].filter(i=>Number.isInteger(i)&&i>=0&&i<W*H).slice(0,100);
+  const changed=[];let protectedCount=0;
+  const starts=rim(s,s.hearth.x,s.hearth.y),reachable=starts.length?flood(s,starts[0]):new Uint8Array(W*H);
+  const accessible=new Set(s.tiles.flatMap((t,i)=>t.node&&rim(s,i%W,Math.floor(i/W)).some(j=>reachable[j])?[i]:[]));
+  for(const i of ids){
+    const n=s.tiles[i].node;if(!n||!!n.clear===clear)continue;
+    if(clear){
+      const remaining=s.tiles.filter(t=>t.node?.type===n.type&&!t.node.clear).length;
+      // Keep renewable seed stock and the last deposit beside an existing extractor.
+      const minimum=n.type==='tree'?4:2;
+      const dependent=s.buildings.some(b=>((n.type==='tree'&&b.type==='forester')||(n.type==='stone'&&['mine','stoneworks'].includes(b.type)))&&
+        Math.hypot(i%W-b.x,Math.floor(i/W)-b.y)<=7&&!s.tiles.some((t,j)=>j!==i&&t.node?.type===n.type&&!t.node.clear&&Math.hypot(j%W-b.x,Math.floor(j/W)-b.y)<=7));
+      const reachableRemaining=s.tiles.filter((t,j)=>t.node?.type===n.type&&!t.node.clear&&accessible.has(j)).length;
+      if(remaining<=minimum||dependent||(accessible.has(i)&&reachableRemaining<=1)){protectedCount++;continue;}
+    }
+    n.clear=clear;changed.push(i);
+  }
+  if(changed.length){emit(s,'landMarked',{count:changed.length});}
+  return {ok:changed.length>0,changed,protectedCount,reason:protectedCount?'A few renewable resources are protected so the village cannot run out.':changed.length?'':'No matching trees or stones in that patch.'};
+}
+export function plantTree(s,x,y){
+  if(!Number.isInteger(x)||!Number.isInteger(y)||!inside(x,y)||!walkable(s,x,y)||at(s,x,y).path)return {ok:false,reason:'Plant on empty grass.'};
+  if(s.wood<2)return {ok:false,reason:'A sapling costs 2 wood.'};
+  if(s.folk.some(f=>Math.floor(f.x)===x&&Math.floor(f.y)===y))return {ok:false,reason:'Give that littlefolk room to pass.'};
+  const extra={x,y,w:1,h:1},starts=rim(s,s.hearth.x,s.hearth.y,1,1,extra);
+  if(!starts.length)return {ok:false,reason:'Keep the lantern reachable.'};
+  const seen=flood(s,starts[0],extra);
+  if(!rim(s,x,y,1,1,extra).some(i=>seen[i])||s.buildings.some(b=>!rim(s,b.x,b.y,2,2,extra).some(i=>seen[i]))||s.folk.some(f=>!seen[idx(Math.floor(f.x),Math.floor(f.y))]))return {ok:false,reason:'That sapling would block a walking route.'};
+  for(const resource of ['tree','stone'])if(!s.tiles.some((t,i)=>t.node?.type===resource&&rim(s,i%W,Math.floor(i/W),1,1,extra).some(j=>seen[j])))return {ok:false,reason:'Keep existing resources reachable.'};
+  at(s,x,y).node={type:'tree',amount:0,rest:25,clear:false};s.wood-=2;s.topology=(s.topology||0)+1;
+  emit(s,'landPlanted',{x:x+.5,y:y+.5});return {ok:true};
+}
+export function removePath(s,x,y){
+  if(!Number.isInteger(x)||!Number.isInteger(y)||!inside(x,y)||!at(s,x,y).path)return {ok:false,reason:'Tap a footpath to lift it.'};
+  at(s,x,y).path=false;s.stone++;emit(s,'landPath',{x:x+.5,y:y+.5});return {ok:true};
+}
+/** Validate movement against the remaining village, without charging or creating a new resident. */
+export function movePlacement(s,id,x,y){
+  const b=s.buildings.find(b=>b.id===id);if(!b)return {ok:false,reason:'That building is not here.'};
+  if(b.x===x&&b.y===y)return {ok:false,reason:'Choose a new patch for this building.'};
+  const old=s.buildings,revision=s.topology;s.buildings=old.filter(v=>v.id!==id);s.topology=(revision||0)+1;
+  try{return placement(s,b.type,x,y,{ignoreCost:true});}
+  finally{s.buildings=old;s.topology=revision;spatial.delete(s);}
+}
+export function moveBuilding(s,id,x,y){
+  const result=movePlacement(s,id,x,y);if(!result.ok)return result;
+  const b=s.buildings.find(b=>b.id===id);b.x=x;b.y=y;s.topology=(s.topology||0)+1;
+  for(const f of s.folk){f.path=[];f.target=null;f.mode='idle';f.timer=.2;}
+  emit(s,'buildingMoved',{x:x+.5,y:y+.5});return {ok:true};
+}
+
 export function snapshot(s) {const copy=JSON.parse(JSON.stringify(s));copy.events=[];copy.savedAt=Date.now();return copy;}
 export function restore(raw) {
   if(!raw||![1,VERSION].includes(raw.version)||!Array.isArray(raw.tiles)||raw.tiles.length!==W*H)throw new Error('This is not a supported Littlefolk save.');
@@ -232,7 +288,7 @@ export function restore(raw) {
   for(const k of ['t','wood','stone','delivered'])if(!finite(raw[k],0,1e12))throw new Error('Invalid village totals.');
   if(!finite(raw.tools,0,2)||!Number.isInteger(raw.tools)||!finite(raw.nextId,1,1e9)||!finite(raw.seed,1,4294967295)||!finite(raw.rng,0,4294967295))throw new Error('Invalid village state.');
   const s=createWorld(raw.seed);Object.assign(s,raw);s.version=VERSION;s.topology=0;s.events=[];s.meeting=null;s.hearth={x:22,y:17};
-  s.tiles=raw.tiles.map(t=>{if(!t||!['grass','water'].includes(t.ground)||!finite(t.detail,0,1))throw new Error('Invalid map tile.');let node=null;if(t.node){if(!['tree','stone'].includes(t.node.type)||!finite(t.node.amount,0,100)||!finite(t.node.rest,0,1000))throw new Error('Invalid resource.');node={type:t.node.type,amount:t.node.amount,rest:t.node.rest};}return {ground:t.ground,detail:t.detail,node,path:!!t.path};});
+  s.tiles=raw.tiles.map(t=>{if(!t||!['grass','water'].includes(t.ground)||!finite(t.detail,0,1))throw new Error('Invalid map tile.');let node=null;if(t.node){if(!['tree','stone'].includes(t.node.type)||!finite(t.node.amount,0,100)||!finite(t.node.rest,0,1000))throw new Error('Invalid resource.');node={type:t.node.type,amount:t.node.amount,rest:t.node.rest,clear:!!t.node.clear};}return {ground:t.ground,detail:t.detail,node,path:!!t.path};});
   const used=new Set();
   s.buildings=raw.buildings.map(b=>{const d=BUILDINGS[b.type];if(!d||b.type==='path'||!finite(b.x,0,W-d.w)||!finite(b.y,0,H-d.h)||!Number.isInteger(b.x)||!Number.isInteger(b.y)||!finite(b.id,1,1e9)||!finite(b.level,1,3)||used.has(b.id))throw new Error('Invalid building.');used.add(b.id);return {id:b.id,type:b.type,x:b.x,y:b.y,level:b.level};});
   const occupied=new Set();for(const b of s.buildings){const d=BUILDINGS[b.type];for(let y=b.y;y<b.y+d.h;y++)for(let x=b.x;x<b.x+d.w;x++){const i=idx(x,y);if(occupied.has(i)||at(s,x,y).ground==='water'||at(s,x,y).node||(x===22&&y===17))throw new Error('Overlapping or unreachable building.');occupied.add(i);}}

@@ -52,10 +52,10 @@ export function initIndustry(s){
 export function stock(s,item){return item==='wood'||item==='stone'?s[item]:(s.industry.goods[item]||0);}
 function addStock(s,item,n){if(item==='wood'||item==='stone')s[item]+=n;else s.industry.goods[item]=(s.industry.goods[item]||0)+n;}
 export function formatGoods(goods){return Object.entries(goods).filter(([,v])=>v>0).map(([k,v])=>`${v} ${ITEMS[k]?.name.toLowerCase()||k}`).join(' + ')||'Nothing';}
-export function industryPlacement(s,type,x,y){
+export function industryPlacement(s,type,x,y,ignoreCost=false){
   const d=EXTRA_BUILDINGS[type];if(!d)return null;
-  if(s.industry.tier<d.tier)return `Unlock this in the Workshop book: ${RESEARCH[d.tier-1].name}.`;
-  for(const [k,n] of Object.entries(d.extra))if(stock(s,k)<n)return `Needs ${formatGoods(d.extra)} in shared storage. Connect outputs back to a hut or stockpile.`;
+  if(!ignoreCost&&s.industry.tier<d.tier)return `Unlock this in the Workshop book: ${RESEARCH[d.tier-1].name}.`;
+  for(const [k,n] of Object.entries(d.extra))if(!ignoreCost&&stock(s,k)<n)return `Needs ${formatGoods(d.extra)} in shared storage. Connect outputs back to a hut or stockpile.`;
   const resource=type==='mine'||type==='stoneworks'?'stone':type==='forester'?'tree':null;
   if(resource&&!s.tiles.some((t,i)=>t.node?.type===resource&&distance({x:i%E.W,y:Math.floor(i/E.W)},{x,y})<=7))return `Build within 7 tiles of ${resource==='tree'?'a tree':'a stone deposit'}.`;
   return null;
@@ -69,7 +69,7 @@ function routePath(s,from,to){
 }
 const outputItems=(s,b)=>isHub(b)?Object.keys(ITEMS).filter(k=>k!=='star'):RECIPES[b?.type]?[RECIPES[b.type].output]:[];
 const inputItems=b=>isHub(b)?Object.keys(ITEMS).filter(k=>k!=='star'):Object.keys(RECIPES[b?.type]?.input||{});
-function compatible(s,from,to){return outputItems(s,from).filter(k=>inputItems(to).includes(k));}
+export function compatible(s,from,to){return outputItems(s,from).filter(k=>inputItems(to).includes(k));}
 export function connect(s,fromId,toId,filter='auto'){
   const from=getB(s,fromId),to=getB(s,toId),i=s.industry;
   if(!from||!to||fromId===toId)return {ok:false,reason:'Choose a different building for the other end.'};
@@ -82,6 +82,24 @@ export function connect(s,fromId,toId,filter='auto'){
   i.routes.push({id:i.nextId++,from:fromId,to:toId,filter,paused:false,cooldown:0,path,revision:s.topology||0,status:'Ready',delivered:0});
   pushEvent(s,'route');return {ok:true};
 }
+/** Optional convenience wiring. Nothing is teleported and existing custom routes are retained. */
+export function connectStorage(s,id){
+  const b=getB(s,id),recipe=RECIPES[b?.type];if(!recipe)return {ok:false,reason:'Choose a production workshop.'};
+  const hubs=s.buildings.filter(isHub).sort((a,c)=>distance(center(a),center(b))-distance(center(c),center(b)));
+  for(const hub of hubs){
+    const desired=[];
+    if(Object.keys(recipe.input).length&&!s.industry.routes.some(q=>q.from===hub.id&&q.to===id))desired.push([hub.id,id]);
+    if(recipe.output!=='star'&&!s.industry.routes.some(q=>q.from===id&&q.to===hub.id))desired.push([id,hub.id]);
+    if(!desired.length)return {ok:true,count:0,hub:hub.id};
+    if(s.industry.routes.length+desired.length>MAX_ROUTES)return {ok:false,reason:'Not enough route slots. Remove an unused route first.'};
+    const routesBefore=[...s.industry.routes],nextBefore=s.industry.nextId,eventCount=s.events.length;
+    const results=desired.map(([a,c])=>connect(s,a,c));
+    if(results.every(r=>r.ok))return {ok:true,count:desired.length,hub:hub.id};
+    s.industry.routes=routesBefore;s.industry.nextId=nextBefore;s.events.splice(eventCount);
+  }
+  return {ok:false,reason:'Place a reachable hut or stockpile nearby.'};
+}
+
 function incoming(s,id,item){return s.industry.shipments.reduce((n,p)=>n+(p.to===id&&p.item===item?p.amount:0),0);}
 function sourceStock(s,b,item){return isHub(b)?Math.max(0,stock(s,item)-(s.industry.reserves[item]||0)):(s.industry.machines[b.id]?.output[item]||0);}
 function takeSource(s,b,item,n){if(isHub(b))addStock(s,item,-n);else s.industry.machines[b.id].output[item]-=n;}

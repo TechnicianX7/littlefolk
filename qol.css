@@ -31,3 +31,12 @@
 }
 @media(max-width:410px){.brand h1{font-size:19px}.resource{padding:5px;min-width:45px}.resource canvas{width:16px;height:16px}.resource strong{font-size:14px}.topactions{gap:0}.topbar{padding-left:6px;padding-right:6px}.statusrow .timepill{font-size:9px}.sidecontrols{gap:4px}.controlgroup button{min-width:37px}.workbar button{font-size:11px;padding-left:9px;padding-right:9px}.inspecttop h3{font-size:21px!important}}
 @media(max-height:650px)and(min-width:741px){#contextRail{width:285px}.workbar{margin-bottom:3px;padding-bottom:3px}.buildcard{min-height:72px}.buildcard canvas{height:28px;width:32px}.hintline{display:none}.sidecontrols{flex-direction:row}.controlgroup{flex-direction:row}.controlgroup .separator{width:1px;height:28px;margin:8px 1px}.statusrow{min-height:27px}}
+
+/* Short landscape still leaves a usable, scrollable task panel between the bars. */
+@media (max-height: 650px) and (min-width: 741px) {
+ .topbar{padding:5px 12px;gap:10px}.brand h1{font-size:23px}.brand small{display:none}.brand canvas{width:30px;height:30px}.resource{padding:4px 9px;min-width:75px}.resource small{font-size:8px}.resource strong{font-size:16px}.iconbutton{height:44px}.topactions{gap:2px}
+ #resourceRibbon{display:none}.statusrow{min-height:28px}#statusbar{min-height:28px}.statusrow .timepill{font-size:10px;padding:3px 0}
+ .bottombar{padding:0 9px calc(5px + var(--safe-bottom));gap:0}.dock{padding:4px 6px}.workbar{margin-bottom:3px;padding-bottom:3px}.workbar button{padding:6px 12px;min-height:44px}.buildcard{min-height:66px;padding:3px 5px 5px}.buildcard canvas{width:30px;height:27px}.buildcard b{font-size:10px;margin-top:1px}.buildcard small{font-size:9px;margin-top:2px}.hintline{display:none}
+ #contextRail{width:285px;top:calc(var(--head-height) + var(--status-height) + 8px);bottom:calc(var(--dock-height) + 8px)}#contextRail>section,#contextRail>aside,#contextRail>.buildhint,#contextRail>.routehint{min-height:0;padding:12px}
+ .sidecontrols{top:calc(var(--head-height) + var(--status-height) + 8px);right:9px;flex-direction:row;align-items:flex-start;gap:5px}.controlgroup{flex-direction:row;padding:2px}.controlgroup button{min-height:44px;min-width:40px}.controlgroup .separator{width:1px;height:28px;margin:8px 1px}.bell{padding:10px}.bell span{display:none}
+}

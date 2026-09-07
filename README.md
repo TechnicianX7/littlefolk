@@ -1,5 +1,11 @@
 # Littlefolk
 
+## Room to Grow · 2.1
+
+Preview and confirm construction, mark forests for autonomous permanent clearing, replant trees, lift paths, move buildings freely, and connect workshop delivery loops in one tap. Context panels now share one measured rail instead of covering each other. Existing villages continue without a reset.
+
+See **[the Room to Grow guide](ROOM-TO-GROW.md)** for the latest controls and update instructions. This guide takes precedence over the older introductions below.
+
 ## Timber & Tinkering
 
 **Version 2.0.0 adds a cozy woodland factory:** ten new buildings, real cargo wagons, buffered production chains, renewable wind power, three research chapters, and the star-post office. The original village and lantern gatherings remain.
