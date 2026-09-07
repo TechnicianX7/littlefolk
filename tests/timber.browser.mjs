@@ -1,0 +1,47 @@
+import {chromium,webkit} from 'playwright';
+import {createServer} from 'node:http';
+import {readFile,mkdir,writeFile} from 'node:fs/promises';
+import {resolve,extname,sep} from 'node:path';
+import assert from 'node:assert/strict';
+const root=resolve('.'),types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.webmanifest':'application/manifest+json','.json':'application/json'};
+const server=createServer(async(req,res)=>{try{let path=decodeURIComponent(new URL(req.url,'http://localhost').pathname).replace(/^\/littlefolk\//,'/');if(path==='/'||path==='')path='/index.html';const file=resolve(root,'.'+path);if(!file.startsWith(root+sep))throw new Error('Not found');res.writeHead(200,{'Content-Type':types[extname(file)]||'application/octet-stream','Cache-Control':'no-cache'});res.end(await readFile(file));}catch{res.writeHead(404);res.end('Not found');}});
+await new Promise(r=>server.listen(4174,'127.0.0.1',r));await mkdir('artifacts',{recursive:true});const results=[];
+try{
+ for(const [name,engine] of [['chromium',chromium],['webkit',webkit]]){
+  const browser=await engine.launch({headless:true});const context=await browser.newContext({viewport:{width:1366,height:1024},isMobile:true,hasTouch:true,deviceScaleFactor:1,acceptDownloads:true});const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
+  const tapTile=async(x,y)=>{const p=await page.evaluate(({x,y})=>window.__littlefolk.screenOf(x,y),{x,y});await page.touchscreen.tap(p.x,p.y);};
+  const framesAdvance=async()=>{const before=await page.evaluate(()=>window.__littlefolk.frames);await page.waitForFunction(n=>window.__littlefolk.frames>n,before,{timeout:4000});assert.equal(await page.evaluate(()=>window.__littlefolk.fault),false);};
+  try{
+   await page.goto('http://127.0.0.1:4174/littlefolk/?test=1');await page.waitForFunction(()=>!!window.__littlefolk);await page.locator('#beginBtn').tap();await tapTile(20.5,19.5);assert.equal(await page.evaluate(()=>window.__littlefolk.state.folk.length),1);await page.evaluate(()=>window.__littlefolk.advance(1800));
+   for(let n=0;n<8;n++){
+    await tapTile(20.5,19.5);await framesAdvance();await page.locator('#settingsBtn').tap();await page.locator('[data-close="settingsBack"]').tap();await page.locator('#industryBtn').tap();for(const tab of ['flow','research','routes','guide'])await page.locator(`[data-tab="${tab}"]`).tap();await page.locator('#closeIndustry').tap();await page.locator('#journalBtn').tap();await page.locator('[data-close="journalBack"]').tap();await page.locator('#zoomIn').tap();await page.locator('#zoomOut').tap();await framesAdvance();
+   }
+   // A browser pointer-capture rejection must not pause or kill the game loop.
+   await page.evaluate(()=>{window.originalCapture=HTMLCanvasElement.prototype.setPointerCapture;HTMLCanvasElement.prototype.setPointerCapture=function(){throw new DOMException('Intentional pointer-capture regression test','NotFoundError');};});await tapTile(20.5,19.5);await page.evaluate(()=>{HTMLCanvasElement.prototype.setPointerCapture=window.originalCapture;});await framesAdvance();
+   await page.evaluate(()=>{const s=window.__littlefolk.state;s.wood=2000;s.stone=2000;s.delivered=2000;});
+   for(const [kind,x,y] of [['windmill',24,19],['sawmill',24,14],['mason',17,14]]){await page.locator('[data-category="Craft"]').tap();await page.locator(`[data-build="${kind}"]`).tap();await tapTile(x+.5,y+.5);assert.equal(await page.evaluate(kind=>window.__littlefolk.state.buildings.some(b=>b.type===kind),kind),true);await framesAdvance();}
+   // Wire a real production loop using only touch controls, not simulation hooks.
+   await tapTile(20.5,19.5);await page.locator('[data-action="connect"]').tap();await tapTile(24.5,14.5);
+   await tapTile(24.5,14.5);await page.locator('[data-action="connect"]').tap();await tapTile(20.5,19.5);
+   await tapTile(20.5,19.5);await page.locator('[data-action="connect"]').tap();await tapTile(17.5,14.5);
+   await tapTile(17.5,14.5);await page.locator('[data-action="connect"]').tap();await tapTile(20.5,19.5);
+   assert.equal(await page.evaluate(()=>window.__littlefolk.state.industry.routes.length),4);await page.evaluate(()=>window.__littlefolk.advance(120));assert.ok(await page.evaluate(()=>window.__littlefolk.state.industry.goods.plank>0&&window.__littlefolk.state.industry.goods.brick>0));
+   await tapTile(24.5,14.5);await page.locator('[data-action="pause"]').tap();assert.equal(await page.evaluate(()=>Object.values(window.__littlefolk.state.industry.machines).some(m=>m.paused)),true);await page.locator('[data-action="pause"]').tap();await framesAdvance();
+   await page.screenshot({path:`artifacts/${name}-timber-factory.png`});
+   await page.locator('#industryBtn').tap();await page.locator('[data-tab="flow"]').tap();await page.screenshot({path:`artifacts/${name}-timber-flow.png`});await page.locator('[data-reserve="wood"]').tap();assert.equal(await page.evaluate(()=>window.__littlefolk.state.industry.reserves.wood),24);await page.locator('#closeIndustry').tap();
+   await page.evaluate(()=>{const s=window.__littlefolk.state;s.industry.goods.plank=12;s.industry.goods.brick=8;});await page.locator('#industryBtn').tap();await page.locator('[data-tab="research"]').tap();await page.locator('#researchBtn').tap();assert.equal(await page.evaluate(()=>window.__littlefolk.state.industry.tier),1);await page.screenshot({path:`artifacts/${name}-timber-research.png`});await page.locator('#closeIndustry').tap();
+   // Real frame fault: the recovery button must resume animation without reloading.
+   const origin=await page.evaluate(()=>performance.timeOrigin);await page.evaluate(()=>window.__littlefolk.injectFrameError());assert.equal(await page.evaluate(()=>window.__littlefolk.fault),true);await page.locator('#fatal button').first().tap();await framesAdvance();assert.equal(await page.evaluate(()=>performance.timeOrigin),origin);
+   const before=await page.evaluate(()=>{window.__littlefolk.save();return JSON.stringify(window.__littlefolk.state.industry.routes.map(r=>[r.from,r.to]));});await page.reload();await page.waitForFunction(()=>!!window.__littlefolk);assert.equal(await page.evaluate(()=>JSON.stringify(window.__littlefolk.state.industry.routes.map(r=>[r.from,r.to]))),before);assert.equal(await page.evaluate(()=>window.__littlefolk.state.industry.tier),1);await framesAdvance();
+   await page.setViewportSize({width:1024,height:1366});await page.screenshot({path:`artifacts/${name}-timber-portrait.png`});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+   await page.setViewportSize({width:390,height:844});await page.locator('#industryBtn').tap();await page.screenshot({path:`artifacts/${name}-timber-phone.png`});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.locator('#closeIndustry').tap();
+   assert.deepEqual(errors,[]);
+   // Start an independent browser context holding only an old-format v1 save.
+   const legacy=await page.evaluate(async()=>{const w=await import('./world.js');const s=w.createWorld(41728);w.place(s,'hut',20,19);for(let n=0;n<18000;n++)w.step(s,.1);const raw=w.snapshot(s);raw.version=1;delete raw.industry;delete raw.topology;return JSON.stringify(raw);});
+   const migration=await browser.newContext({viewport:{width:1024,height:1366},isMobile:true,hasTouch:true});await migration.addInitScript(raw=>{if(!localStorage.getItem('littlefolk.v1.save'))localStorage.setItem('littlefolk.v1.save',raw);},legacy);const migrated=await migration.newPage();await migrated.goto('http://127.0.0.1:4174/littlefolk/?test=1');await migrated.waitForFunction(()=>!!window.__littlefolk);assert.equal(await migrated.evaluate(()=>window.__littlefolk.state.version),2);assert.equal(await migrated.evaluate(()=>window.__littlefolk.state.folk[0].name),'Pip');assert.equal(await migrated.locator('#welcomeBack').isVisible(),false);await migrated.evaluate(()=>window.__littlefolk.save());assert.equal(await migrated.evaluate(()=>localStorage.getItem('littlefolk.v1.save')),legacy);assert.ok(await migrated.evaluate(()=>localStorage.getItem('littlefolk.v2.save')));await migration.close();
+   results.push({engine:name,result:'passed',coverage:['repeated touch actions after 30 minutes','recoverable pointer-capture failure','touch factory placement','touch cargo wiring','physical plank and brick production','machine pause/resume','research purchase','same-document frame recovery','cargo survives reload','v1 save migration without overwriting original','portrait and phone layout']});
+  }catch(error){await page.screenshot({path:`artifacts/${name}-timber-failure.png`}).catch(()=>{});results.push({engine:name,result:'failed',error:String(error),pageErrors:errors});throw error;}
+  finally{await context.close();await browser.close();}
+ }
+}finally{await writeFile('artifacts/timber-browser-results.json',JSON.stringify(results,null,2));await new Promise(r=>server.close(r));}
+console.log(JSON.stringify(results,null,2));
