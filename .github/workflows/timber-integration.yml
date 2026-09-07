@@ -36,11 +36,30 @@ jobs:
               t=t.replace('node --test tests/world.test.mjs', 'node --test tests/*.test.mjs')
           p.write_text(t)
           PY
+      - name: Retain integrated source before browser tests
+        uses: actions/upload-artifact@v4
+        with:
+          name: timber-integrated-source
+          retention-days: 7
+          include-hidden-files: true
+          path: |
+            *.js
+            *.html
+            *.css
+            *.json
+            *.webmanifest
+            *.svg
+            *.md
+            tests/
+            tools/
+            .github/workflows/
       - name: Check JavaScript
         run: npm run check
       - name: Test all village and factory simulation rules
         shell: bash
-        run: node --test tests/*.test.mjs | tee unit-results.txt
+        run: |
+          set -o pipefail
+          node --test tests/*.test.mjs | tee unit-results.txt
       - name: Prepare browser tests
         run: |
           npm install --no-save --ignore-scripts playwright
@@ -49,13 +68,13 @@ jobs:
         run: node tests/browser.mjs
       - name: Test touch factories, frame recovery and legacy saves
         run: node tests/timber.browser.mjs
-      - name: Commit only tested integration changes to the development branch
+      - name: Commit only tested app changes to the development branch
         shell: bash
         run: |
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app.js world.js index.html sw.js package.json .github/workflows/check.yml tests/browser.mjs README.md
+          git add app.js world.js index.html sw.js package.json tests/browser.mjs README.md
           if ! git diff --cached --quiet; then
             git commit -m 'Release tested Littlefolk 2.0: Timber & Tinkering'
             git push origin HEAD:build/timber-tinkering
