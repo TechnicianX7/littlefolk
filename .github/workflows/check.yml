@@ -1,7 +1,7 @@
 name: Village checks
 on:
   push:
-    branches: [main, build/first-village]
+    branches: [main, release/timber-2.0]
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,17 +14,23 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Check JavaScript
         run: npm run check
-      - name: Test the village simulation
+      - name: Test the village and industry simulations
         shell: bash
-        run: node --test tests/world.test.mjs | tee unit-results.txt
+        run: |
+          set -o pipefail
+          node --test tests/*.test.mjs | tee unit-results.txt
       - name: Prepare browser tests
         run: |
           npm install --no-save --ignore-scripts playwright
           npx playwright install --with-deps chromium webkit
       - name: Test tablet controls, saves and offline play
         run: node tests/browser.mjs
+      - name: Test supply chains, touch recovery and legacy villages
+        run: node tests/timber.browser.mjs
       - name: Keep source and visual test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -35,10 +41,15 @@ jobs:
             index.html
             app.js
             world.js
+            industry.js
+            industry-ui.js
+            industry.css
             sw.js
             manifest.webmanifest
             icon.svg
             package.json
+            README.md
+            TIMBER.md
             tests/
             artifacts/
             unit-results.txt
