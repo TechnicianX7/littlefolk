@@ -16,15 +16,17 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check JavaScript
         run: npm run check
-      - name: Test the village simulation
+      - name: Test the village and factory simulation
         shell: bash
-        run: node --test tests/world.test.mjs | tee unit-results.txt
+        run: |
+          set -o pipefail
+          node --test tests/*.test.mjs | tee unit-results.txt
       - name: Prepare browser tests
         run: |
           npm install --no-save --ignore-scripts playwright
           npx playwright install --with-deps chromium webkit
-      - name: Test tablet controls, saves and offline play
-        run: node tests/browser.mjs
+      - name: Test tablet controls, saves, offline play and factory recovery
+        run: node tests/browser.mjs && node tests/timber.browser.mjs
       - name: Keep source and visual test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -35,10 +37,15 @@ jobs:
             index.html
             app.js
             world.js
+            industry.js
+            industry-ui.js
+            industry.css
             sw.js
             manifest.webmanifest
             icon.svg
             package.json
+            README.md
+            TIMBER.md
             tests/
             artifacts/
             unit-results.txt
