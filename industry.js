@@ -1,13 +1,14 @@
 /* Timber & Tinkering: deterministic production, renewable power and physical cargo.
    No network, wall-clock simulation, or external dependencies. */
-export const ITEMS = {
+import {FOOD_ITEMS,FOOD_BUILDINGS,FOOD_RECIPES} from './bloom.js';
+export const ITEMS = {...FOOD_ITEMS,
   wood:{name:'Wood',color:'#bc8855'},stone:{name:'Stone',color:'#9cad9c'},
   plank:{name:'Planks',color:'#e1b578'},brick:{name:'Bricks',color:'#bd816b'},
   ore:{name:'Ore',color:'#a8908b'},coal:{name:'Charcoal',color:'#666967'},
   iron:{name:'Iron',color:'#bdd1ce'},gear:{name:'Gears',color:'#d5b768'},star:{name:'Star mail',color:'#f6d996'}
 };
 const def=(name,short,wood,stone,unlock,desc,tier=0,extra={})=>({name,short,wood,stone,unlock,desc,tier,extra,w:2,h:2});
-export const EXTRA_BUILDINGS = {
+export const EXTRA_BUILDINGS = {...FOOD_BUILDINGS,
   windmill:def('Meadow windmill','Windmill',22,12,28,'Clean wind power for workshops within 9 tiles. Each mill shares 8 power fairly. More mills help when the village gets busy.'),
   sawmill:def('Little sawmill','Sawmill',18,8,28,'2 wood → 1 plank. Connect a hut or stockpile to feed it, then connect its output back home. Needs nearby wind power.'),
   mason:def('Brick cottage','Brick cottage',20,12,40,'3 stone → 2 bricks. A warm little beginning for a bigger village.'),
@@ -19,7 +20,7 @@ export const EXTRA_BUILDINGS = {
   stoneworks:def('Pebble polisher','Polisher',32,26,0,'Produces stone beside a stone deposit. Gentle automation for the larger village.',3,{gear:6,brick:12}),
   skypost:def('Star-post office','Star post',40,30,0,'2 planks + 1 gear → a letter to somewhere far away. The whole village gets a postcard when it launches.',3,{gear:8,brick:16})
 };
-export const RECIPES = {
+export const RECIPES = {...FOOD_RECIPES,
   sawmill:{input:{wood:2},output:'plank',amount:1,seconds:5,power:1},
   mason:{input:{stone:3},output:'brick',amount:2,seconds:6,power:1},
   kiln:{input:{wood:3},output:'coal',amount:2,seconds:8,power:1},
@@ -47,7 +48,7 @@ const pushEvent=(s,type,data={})=>{s.events.push({type,...data});if(s.events.len
 function note(s,who,text){E.remember(s,who,text);}
 export function initIndustry(s){
   s.industry={version:1,tier:0,goods:{},machines:{},routes:[],shipments:[],nextId:1,logistics:0,
-    reserves:{wood:12,stone:8},limits:{wood:160,stone:160,plank:64,brick:64,ore:48,coal:48,iron:64,gear:32},totals:{},history:[],postcards:0,lastRoute:{}};
+    reserves:{wood:12,stone:8},limits:{veg:96,berry:72,fish:72,meal:120,wood:160,stone:160,plank:64,brick:64,ore:48,coal:48,iron:64,gear:32},totals:{},history:[],postcards:0,lastRoute:{}};
 }
 export function stock(s,item){return item==='wood'||item==='stone'?s[item]:(s.industry.goods[item]||0);}
 function addStock(s,item,n){if(item==='wood'||item==='stone')s[item]+=n;else s.industry.goods[item]=(s.industry.goods[item]||0)+n;}
@@ -56,6 +57,7 @@ export function industryPlacement(s,type,x,y,ignoreCost=false){
   const d=EXTRA_BUILDINGS[type];if(!d)return null;
   if(!ignoreCost&&s.industry.tier<d.tier)return `Unlock this in the Workshop book: ${RESEARCH[d.tier-1].name}.`;
   for(const [k,n] of Object.entries(d.extra))if(!ignoreCost&&stock(s,k)<n)return `Needs ${formatGoods(d.extra)} in shared storage. Connect outputs back to a hut or stockpile.`;
+  if(type==='fishery'&&!s.tiles.some((t,i)=>t.ground==='water'&&distance({x:i%E.W,y:Math.floor(i/E.W)},{x:x+1,y:y+1})<=5))return 'Fishing cottages need water within 5 tiles. Look for the blue shore ring.';
   const resource=type==='mine'||type==='stoneworks'?'stone':type==='forester'?'tree':null;
   if(resource&&!s.tiles.some((t,i)=>t.node?.type===resource&&distance({x:i%E.W,y:Math.floor(i/E.W)},{x,y})<=7))return `Build within 7 tiles of ${resource==='tree'?'a tree':'a stone deposit'}.`;
   return null;
@@ -74,7 +76,7 @@ export function connect(s,fromId,toId,filter='auto'){
   const from=getB(s,fromId),to=getB(s,toId),i=s.industry;
   if(!from||!to||fromId===toId)return {ok:false,reason:'Choose a different building for the other end.'};
   if(isHub(from)&&isHub(to))return {ok:false,reason:'Huts and stockpiles already share storage. Connect one to a workshop instead.'};
-  if(!compatible(s,from,to).length)return {ok:false,reason:'Those buildings do not have matching goods. Check their recipes in the Workshop book.'};
+  if(!compatible(s,from,to).length)return {ok:false,reason:`${E.BUILDINGS[from.type].short} sends ${outputItems(s,from).map(k=>ITEMS[k].name.toLowerCase()).join(', ')||'no cargo'}. ${E.BUILDINGS[to.type].short} accepts ${inputItems(to).map(k=>ITEMS[k].name.toLowerCase()).join(', ')||'no cargo'}. Match an output to an ingredient.`};
   if(filter!=='auto'&&!compatible(s,from,to).includes(filter))return {ok:false,reason:'That item is not used by this route.'};
   if(i.routes.some(r=>r.from===fromId&&r.to===toId))return {ok:false,reason:'That route already exists.'};
   if(i.routes.length>=MAX_ROUTES)return {ok:false,reason:'This island supports 64 cargo routes.'};
@@ -148,8 +150,8 @@ export function stepIndustry(s,dt){
   const i=s.industry;if(!i)return;
   const activity=s.meeting?.2:1;dt*=activity;
   const machines=s.buildings.filter(b=>RECIPES[b.type]),mills=s.buildings.filter(b=>b.type==='windmill');
-  for(const b of machines){const m=i.machines[b.id]||(i.machines[b.id]=freshMachine());m.power=0;}
-  for(const mill of mills){const served=machines.filter(b=>!i.machines[b.id].paused&&distance(center(b),center(mill))<=9),load=served.reduce((n,b)=>n+RECIPES[b.type].power,0);if(load)for(const b of served)i.machines[b.id].power+=8/load;}
+  for(const b of machines){const m=i.machines[b.id]||(i.machines[b.id]=freshMachine());m.power=RECIPES[b.type].power===0?1:0;}
+  for(const mill of mills){const served=machines.filter(b=>RECIPES[b.type].power>0&&!i.machines[b.id].paused&&distance(center(b),center(mill))<=9),load=served.reduce((n,b)=>n+RECIPES[b.type].power,0);if(load)for(const b of served)i.machines[b.id].power+=8/load;}
   for(const b of machines){
     const m=i.machines[b.id],r=RECIPES[b.type];m.power=Math.min(1,m.power);
     if(m.paused){m.status='Taking a break';continue;}

@@ -1,5 +1,9 @@
 # Littlefolk
 
+## Hearth & Harvest · 2.2.0
+
+Five village projects, meals and village spirit, effortless area clearing, automatic delivery loops, building purpose cards, more color, and 5× speed. See **[Hearth & Harvest](HEARTH-AND-HARVEST.md)** for the current guide. Its current behavior takes precedence over older release notes below.
+
 ## Room to Grow · 2.1
 
 Preview and confirm construction, mark forests for autonomous permanent clearing, replant trees, lift paths, move buildings freely, and connect workshop delivery loops in one tap. Context panels now share one measured rail instead of covering each other. Existing villages continue without a reset.

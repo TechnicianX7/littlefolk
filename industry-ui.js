@@ -1,5 +1,7 @@
+import {BUILDING_PURPOSE} from './bloom.js';
 import {BUILDINGS,TILE,buildingAt} from './world.js';
 import {ITEMS,EXTRA_BUILDINGS,RECIPES,RESEARCH,isHub,stock,formatGoods,connect,research,upgradeLogistics,removeRoute,demolish,cargoPosition,statistics,compatible,connectStorage} from './industry.js';
+import {drawFoodBuilding,buildingGuideHTML} from './bloom-ui.js';
 import {goodsHTML} from './qol-ui.js';
 const $=id=>document.getElementById(id);
 const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -9,6 +11,7 @@ const poly=(c,points,color)=>{c.fillStyle=color;c.beginPath();points.forEach(([x
 function gear(c,x,y,color='#dabd76'){r(c,x-4,y-2,8,5,color);r(c,x-2,y-4,5,9,color);r(c,x-5,y-1,10,3,color);r(c,x-1,y-5,3,11,color);r(c,x-1,y-1,3,3,'#6d7960');}
 function crate(c,x,y,item,amount=1){r(c,x-4,y+2,3,2,'#555e4b');r(c,x+2,y+2,3,2,'#555e4b');r(c,x-5,y-4,10,6,'#90744e');r(c,x-4,y-4,8,4,ITEMS[item]?.color||'#c6ac75');r(c,x-5,y-1,10,1,'#e6c98a');r(c,x-1,y-4,1,6,'#9c8254');if(amount>=6){r(c,x-3,y-7,6,3,ITEMS[item]?.color||'#c6ac75');}}
 export function drawIndustryBuilding(c,type){
+  if(drawFoodBuilding(c,type))return true;
   if(!EXTRA_BUILDINGS[type])return false;
   if(type==='windmill'){
     poly(c,[[9,31],[12,1],[23,1],[27,31]],'#b09b72');poly(c,[[11,29],[14,2],[21,2],[24,29]],'#e1cf9d');
@@ -42,9 +45,9 @@ export function drawIndustryBuilding(c,type){
   }
   r(c,3,33,5,1,'#849959');r(c,26,33,4,1,'#849959');return true;
 }
-const CATEGORIES={Village:['hut','path','depot','lumber','quarry','garden','workshop'],Craft:['windmill','sawmill','mason','kiln'],Metal:['mine','smelter','gearworks'],Wonders:['forester','stoneworks','skypost']};
+const CATEGORIES={Food:['vegetable','kitchen','orchard','fishery'],Village:['hut','path','depot','lumber','quarry','garden','workshop'],Craft:['windmill','sawmill','mason','kiln'],Metal:['mine','smelter','gearworks'],Wonders:['forester','stoneworks','skypost']};
 export function installIndustryUI(api){
-  let category='Village',tab='guide',linkFrom=null,lastInspect='',inspectId=null,showRoutes=true,postcards=[];
+  let category='Village',tab='guide',linkFrom=null,lastInspect='',inspectId=null,showRoutes=false,postcards=[];
   const S=api.getState;
   const nav=document.createElement('nav');nav.className='workbar';nav.setAttribute('aria-label','Building categories');
   nav.innerHTML=Object.keys(CATEGORIES).map(k=>`<button class="category${k===category?' active':''}" data-category="${k}">${k}</button>`).join('')+'<button class="bookbutton" id="industryBtn">Workshop book <span id="factoryBadge"></span></button>';
@@ -53,10 +56,10 @@ export function installIndustryUI(api){
   document.querySelector('.bottombar').prepend(hint);
   const more=document.createElement('div');more.id='factoryInspector';$('inspector').append(more);
   const back=document.createElement('div');back.id='industryBack';back.className='sheetback';back.hidden=true;
-  back.innerHTML='<section class="sheet factorybook" role="dialog" aria-modal="true" aria-labelledby="factoryTitle" tabindex="-1"><div class="sheetheader"><div><div class="eyebrow">Room to Grow · 2.1</div><h2 id="factoryTitle">The workshop book</h2></div><button class="iconbutton" id="closeIndustry" aria-label="Close workshop book">×</button></div><p>A clever little village. Everything has somewhere to go.</p><nav class="booktabs" id="factoryTabs"></nav><div id="factoryContent"></div><div class="villagefooter">The village rests while you read. No rush.</div></section>';
+  back.innerHTML='<section class="sheet factorybook" role="dialog" aria-modal="true" aria-labelledby="factoryTitle" tabindex="-1"><div class="sheetheader"><div><div class="eyebrow">Hearth & Harvest · 2.2</div><h2 id="factoryTitle">The workshop book</h2></div><button class="iconbutton" id="closeIndustry" aria-label="Close workshop book">×</button></div><p>A clever little village. Everything has somewhere to go.</p><nav class="booktabs" id="factoryTabs"></nav><div id="factoryContent"></div><div class="villagefooter">The village rests while you read. No rush.</div></section>';
   $('app').append(back);
   const diag=document.createElement('button');diag.className='secondary wide';diag.id='diagnosticsBtn';diag.textContent='Export stability report';$('resetBtn').before(diag);
-  diag.onclick=()=>{const blob=new Blob([JSON.stringify({version:'2.1.0',errors:api.diagnostics(),buildings:S().buildings.length,folk:S().folk.length,routes:S().industry.routes.length},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='littlefolk-stability.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);};
+  diag.onclick=()=>{const blob=new Blob([JSON.stringify({version:'2.2.0',errors:api.diagnostics(),buildings:S().buildings.length,folk:S().folk.length,routes:S().industry.routes.length},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='littlefolk-stability.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);};
   function cancelLink(){linkFrom=null;$('routeHint').hidden=true;api.onContext?.();}
   function changeCategory(k){category=k;cancelLink();api.clearSelection();for(const b of nav.querySelectorAll('[data-category]')){b.classList.toggle('active',b.dataset.category===category);b.setAttribute('aria-pressed',String(b.dataset.category===category));}for(const b of $('buildings').children)b.hidden=!CATEGORIES[k].includes(b.dataset.build);$('buildings').scrollLeft=0;}
   function title(id){const b=S().buildings.find(b=>b.id===id);return b?`${BUILDINGS[b.type].short} (${b.x},${b.y})`:'Removed building';}
@@ -109,6 +112,7 @@ export function installIndustryUI(api){
   $('factoryContent').addEventListener('change',e=>{const el=e.target,k=el.dataset.reserveInput||el.dataset.limitInput;if(!k)return;const bag=el.dataset.reserveInput?S().industry.reserves:S().industry.limits;const low=el.dataset.reserveInput?0:1;const value=Number(el.value);if(!Number.isFinite(value)||!Number.isInteger(value)||value<low||value>(el.dataset.reserveInput?1000:10000)){el.value=bag[k];api.toast('Enter a whole number in the shown range.');return;}bag[k]=value;api.changed();api.toast('Stock setting saved.');});
   more.onclick=e=>{
     const b=e.target.closest('button');if(!b)return;const s=S(),id=Number(more.dataset.id),m=s.industry.machines[id];
+    if(b.dataset.guide){api.chooseBuild(b.dataset.guide);return;}
     if(b.dataset.action==='connect')startLink(id);
     if(b.dataset.action==='storage'){const r=connectStorage(s,id);api.changed();api.toast(r.ok?(r.count?'Delivery loop connected. Watch the wagons.':'This workshop is already connected to storage.'):r.reason);}
     if(b.dataset.action==='wind'){api.chooseBuild('windmill');return;}
@@ -120,18 +124,20 @@ export function installIndustryUI(api){
   function inspect(kind,b){
     if(kind!=='building'){more.hidden=true;lastInspect='';return;}more.hidden=false;inspectId=b.id;more.dataset.id=b.id;
     const s=S(),m=s.industry.machines[b.id],recipe=RECIPES[b.type],signature=b.id+':'+b.type+':'+!!m?.paused;
-    if(lastInspect!==signature){lastInspect=signature;more.innerHTML=`${m?'<div class="machinestatus" id="machineStatus" role="status"></div><div class="progress"><span id="machineProgress"></span></div><div class="recipeFlow" id="machineRecipe"></div><div class="buffers" id="machineBuffers"></div><button class="primary wide" data-action="wind" id="fixWind">Place a nearby windmill</button><button class="primary wide" data-action="storage">Connect storage</button>':''}${b.type==='windmill'?'<div class="recipeFlow"><b>Wind → nearby workshops</b><span>8 power · 9-tile reach</span></div><p class="taskcopy">The blue ring shows which workshops it powers. Add a second mill when power runs low.</p>':''}<div class="smallactions"><button class="secondary" data-action="move">Move building</button>${isHub(b)?'<button class="primary" data-action="connect">Send goods…</button>':''}</div><details class="machineDetails"><summary>More options</summary><div class="smallactions">${recipe&&recipe.output!=='star'?'<button class="secondary" data-action="connect">Send goods…</button>':''}${m?`<button class="secondary" data-action="pause">${m.paused?'Resume':'Pause'}</button>`:''}${isHub(b)||recipe?'<button class="secondary" data-action="routes">Routes</button>':''}${b.type!=='hut'?'<button class="secondary reclaim" data-action="remove">Reclaim building</button>':''}</div></details>`;}
+    if(lastInspect!==signature){lastInspect=signature;more.innerHTML=`${m?'<div class="machinestatus" id="machineStatus" role="status"></div><div class="progress"><span id="machineProgress"></span></div><div class="recipeFlow" id="machineRecipe"></div><div class="buffers" id="machineBuffers"></div><div id="machineSuppliers" class="relatedBuildings"></div><button class="primary wide" data-action="wind" id="fixWind">Place a nearby windmill</button><button class="primary wide" data-action="storage">Connect storage</button>':''}${b.type==='windmill'?'<div class="recipeFlow"><b>Wind → nearby workshops</b><span>8 power · 9-tile reach</span></div><p class="taskcopy">The blue ring shows which workshops it powers. Add a second mill when power runs low.</p>':''}<div class="purposeLine">${BUILDING_PURPOSE[b.type]?.[0]||BUILDINGS[b.type].short}</div><div class="smallactions"><button class="secondary" data-action="move">Move building</button>${isHub(b)?'<button class="primary" data-action="connect">Send goods…</button>':''}</div><details class="machineDetails"><summary>More options</summary><div class="smallactions">${recipe&&recipe.output!=='star'?'<button class="secondary" data-action="connect">Send goods…</button>':''}${m?`<button class="secondary" data-action="pause">${m.paused?'Resume':'Pause'}</button>`:''}${isHub(b)||recipe?'<button class="secondary" data-action="routes">Routes</button>':''}${b.type!=='hut'?'<button class="secondary reclaim" data-action="remove">Reclaim building</button>':''}</div></details>`;}
     if(m){
-      $('inspectText').hidden=true;$('inspectStats').textContent=`Wind ${Math.round(m.power*100)}% · ${m.cycles} batches made`;
+      $('inspectText').hidden=true;$('inspectStats').textContent=`${recipe.power?'Wind '+Math.round(m.power*100)+'%':'No wind needed'} · ${m.cycles} batches made`;
       const incoming=s.industry.routes.filter(q=>q.to===b.id&&!q.paused),outgoing=s.industry.routes.some(q=>q.from===b.id&&!q.paused);
-      let message=m.paused?'Paused by you':m.power<=0?'Needs wind power':!outgoing&&recipe.output!=='star'?'Finished goods need a route home':m.status;
+      let message=m.paused?'Paused by you':recipe.power&&m.power<=0?'Needs wind power':!outgoing&&recipe.output!=='star'?'Finished goods need a route home':m.status;
       if(m.status.startsWith('Waiting for')&&!incoming.length)message='Needs supplies. Connect storage below.';
       if(m.status.startsWith('Waiting for')&&incoming.some(q=>isHub(s.buildings.find(v=>v.id===q.from)))){
         const k=Object.keys(recipe.input).find(k=>['wood','stone'].includes(k)&&stock(s,k)<=(s.industry.reserves[k]||0));if(k)message=`${ITEMS[k].name} is kept for building. Wait for more, or lower its reserve in Goods & flow.`;
       }
+      const suppliers=[...new Set(Object.keys(recipe.input).flatMap(k=>Object.entries(RECIPES).filter(([,r])=>r.output===k).map(([t])=>t)))];
+      $('machineSuppliers').innerHTML=suppliers.length?'<span>Make its ingredients</span>'+suppliers.map(t=>`<button class="chainLink" data-guide="${t}">${BUILDINGS[t].short}</button>`).join(''):'';
       $('machineStatus').textContent=message;$('machineProgress').style.width=Math.min(100,m.progress/recipe.seconds*100)+'%';
-      $('machineRecipe').innerHTML=`<div>${Object.keys(recipe.input).length?goodsHTML(recipe.input):'<span class="goodchip">Wind</span>'}</div><b class="flowArrow" aria-label="becomes">↓</b><div>${goodsHTML({[recipe.output]:recipe.amount})}</div><small>One batch every ${recipe.seconds}s at full wind</small>`;
-      $('machineBuffers').innerHTML=`<div><b>Supplies here</b>${goodsHTML(m.input)||'<span>Waiting for a wagon</span>'}</div><div><b>Ready to ship</b>${goodsHTML(m.output)||'<span>Nothing waiting</span>'}</div>`;$('fixWind').hidden=m.power>0;
+      $('machineRecipe').innerHTML=`<div>${Object.keys(recipe.input).length?goodsHTML(recipe.input):'<span class="goodchip">'+(recipe.power?'Wind':'Grows itself')+'</span>'}</div><b class="flowArrow" aria-label="becomes">↓</b><div>${goodsHTML({[recipe.output]:recipe.amount})}</div><small>One batch every ${recipe.seconds}s${recipe.power?' at full wind':''}</small>`;
+      $('machineBuffers').innerHTML=`<div><b>Supplies here</b>${goodsHTML(m.input)||'<span>Waiting for a wagon</span>'}</div><div><b>Ready to ship</b>${goodsHTML(m.output)||'<span>Nothing waiting</span>'}</div>`;$('fixWind').hidden=!recipe.power||m.power>0;
     }else{$('inspectText').hidden=false;if(isHub(b)){$('inspectText').textContent='Folk bring materials here. Workshops can collect from here and send finished goods home.';}}
   }
   function update(){
@@ -152,7 +158,8 @@ export function installIndustryUI(api){
   function drawBelow(c,selection,selected,hover){
     const s=S(),mill=selection?.kind==='building'?s.buildings.find(b=>b.id===selection.id&&b.type==='windmill'):null;
     if(mill||(selected==='windmill'&&hover)){const p=mill||hover;c.save();c.strokeStyle='#d6f3e5bb';c.fillStyle='#79bfd71a';c.lineWidth=.7;c.setLineDash([3,3]);c.beginPath();c.arc((p.x+1)*TILE,(p.y+1)*TILE,9*TILE,0,Math.PI*2);c.fill();c.stroke();c.restore();}
-    if(showRoutes){c.save();for(const q of s.industry.routes){if(!q.path?.length)continue;c.lineWidth=3;c.strokeStyle=q.paused?'#aaa68d55':'#7d775b66';c.beginPath();q.path.forEach((p,j)=>j?c.lineTo(p.x*TILE,p.y*TILE):c.moveTo(p.x*TILE,p.y*TILE));c.stroke();c.lineWidth=1;c.strokeStyle='#dac897b0';c.setLineDash([2,3]);c.stroke();c.setLineDash([]);
+    if(selected==='fishery'&&hover){c.save();c.strokeStyle='#9dd9e8';c.setLineDash([3,3]);c.lineWidth=1;c.beginPath();c.arc((hover.x+1)*TILE,(hover.y+1)*TILE,5*TILE,0,Math.PI*2);c.stroke();c.restore();}
+    if(showRoutes||selection?.kind==='building'){c.save();for(const q of s.industry.routes){if(!showRoutes&&q.from!==selection?.id&&q.to!==selection?.id)continue;if(!q.path?.length)continue;c.lineWidth=3;c.strokeStyle=q.paused?'#aaa68d55':'#7d775b66';c.beginPath();q.path.forEach((p,j)=>j?c.lineTo(p.x*TILE,p.y*TILE):c.moveTo(p.x*TILE,p.y*TILE));c.stroke();c.lineWidth=1;c.strokeStyle='#dac897b0';c.setLineDash([2,3]);c.stroke();c.setLineDash([]);
         const a=q.path[Math.floor(q.path.length/2)],b=q.path[Math.min(q.path.length-1,Math.floor(q.path.length/2)+1)];if(a&&b){const angle=Math.atan2(b.y-a.y,b.x-a.x);c.save();c.translate(a.x*TILE,a.y*TILE);c.rotate(angle);poly(c,[[-2,-2],[2,0],[-2,2]],'#f5df9a');c.restore();}}
       c.restore();}
     if(linkFrom!==null){const from=s.buildings.find(b=>b.id===linkFrom);if(from){c.save();c.strokeStyle='#fff1a8';c.lineWidth=1.5;c.strokeRect(from.x*TILE-2,from.y*TILE-2,36,36);for(const b of s.buildings)if(b.id!==from.id&&!(isHub(from)&&isHub(b))&&compatible(s,from,b).length&&!s.industry.routes.some(q=>q.from===from.id&&q.to===b.id)){c.strokeStyle='#f5f0c477';c.strokeRect(b.x*TILE-1,b.y*TILE-1,34,34);}c.restore();}}
