@@ -1,6 +1,6 @@
 /* Timber & Tinkering: deterministic production, renewable power and physical cargo.
    No network, wall-clock simulation, or external dependencies. */
-import {FOOD_ITEMS,FOOD_BUILDINGS,FOOD_RECIPES} from './bloom.js';
+import {FOOD_ITEMS,FOOD_BUILDINGS,FOOD_RECIPES,fundingPlan} from './bloom.js';
 export const ITEMS = {...FOOD_ITEMS,
   wood:{name:'Wood',color:'#bc8855'},stone:{name:'Stone',color:'#9cad9c'},
   plank:{name:'Planks',color:'#e1b578'},brick:{name:'Bricks',color:'#bd816b'},
@@ -103,7 +103,8 @@ export function connectStorage(s,id){
 }
 
 function incoming(s,id,item){return s.industry.shipments.reduce((n,p)=>n+(p.to===id&&p.item===item?p.amount:0),0);}
-function sourceStock(s,b,item){return isHub(b)?Math.max(0,stock(s,item)-(s.industry.reserves[item]||0)):(s.industry.machines[b.id]?.output[item]||0);}
+const wishBudgets=new WeakMap();
+function sourceStock(s,b,item){return isHub(b)?Math.max(0,stock(s,item)-Math.max(s.industry.reserves[item]||0,(wishBudgets.get(s)||{})[item]||0)):(s.industry.machines[b.id]?.output[item]||0);}
 function takeSource(s,b,item,n){if(isHub(b))addStock(s,item,-n);else s.industry.machines[b.id].output[item]-=n;}
 function room(s,b,item){return isHub(b)?999999:Math.max(0,CAP-(s.industry.machines[b.id]?.input[item]||0)-incoming(s,b.id,item));}
 function storeDelivery(s,p){const to=getB(s,p.to);if(isHub(to)||!to){addStock(s,p.item,p.amount);return;}const m=s.industry.machines[p.to];if(m)m.input[p.item]=(m.input[p.item]||0)+p.amount;else addStock(s,p.item,p.amount);}
@@ -147,7 +148,7 @@ const POSTCARDS=[
   'The village sent a spare gear and a note: “For whatever you are trying to fix.”'
 ];
 export function stepIndustry(s,dt){
-  const i=s.industry;if(!i)return;
+  const i=s.industry;if(!i)return;wishBudgets.set(s,fundingPlan(s));
   const activity=s.meeting?.2:1;dt*=activity;
   const machines=s.buildings.filter(b=>RECIPES[b.type]),mills=s.buildings.filter(b=>b.type==='windmill');
   for(const b of machines){const m=i.machines[b.id]||(i.machines[b.id]=freshMachine());m.power=RECIPES[b.type].power===0?1:0;}
@@ -196,7 +197,7 @@ export function stepIndustry(s,dt){
     if(!kinds.length){r.status='No matching goods';continue;}
     const sorted=kinds.sort((a,b)=>{const m=i.machines[to.id];return ((m?.input[a]||0)+incoming(s,to.id,a))/(RECIPES[to.type]?.input[a]||1)-((m?.input[b]||0)+incoming(s,to.id,b))/(RECIPES[to.type]?.input[b]||1);});
     let sent=false,waiting='Waiting for goods';
-    for(const item of sorted){const available=sourceStock(s,from,item),space=room(s,to,item);if(space<=0){waiting='Destination full';continue;}if(available<=0){waiting=isHub(from)&&['wood','stone'].includes(item)?`Protecting ${item} reserve`:`Waiting for ${ITEMS[item].name.toLowerCase()}`;continue;}
+    for(const item of sorted){const available=sourceStock(s,from,item),space=room(s,to,item);if(space<=0){waiting='Destination full';continue;}if(available<=0){waiting=isHub(from)&&stock(s,item)>0&&(wishBudgets.get(s)||{})[item]>0?`Setting aside ${ITEMS[item].name.toLowerCase()} for your village wish`:isHub(from)&&['wood','stone'].includes(item)?`Protecting ${item} reserve`:`Waiting for ${ITEMS[item].name.toLowerCase()}`;continue;}
       const amount=Math.min(3+i.logistics*3,available,space),length=pathLength(r.path);takeSource(s,from,item,amount);i.shipments.push({id:i.nextId++,route:r.id,to:r.to,item,amount,travel:0,length});i.lastRoute[r.from]=r.id;r.cooldown=2.5;r.status='Carrying '+ITEMS[item].name.toLowerCase();sent=true;break;
     }if(!sent)r.status=waiting;
   }

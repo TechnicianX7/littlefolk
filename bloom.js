@@ -18,7 +18,7 @@ export const PROJECTS=[
   {id:'arch',name:'A welcome in bloom',icon:'🌸',cost:{brick:12,berry:8},tier:0,reward:'A flowering arch at the lantern and colorful village flags.',stamp:'Warm welcome'},
   {id:'fountain',name:'The wishing fountain',icon:'⛲',cost:{brick:24,iron:8},tier:1,reward:'A bubbling fountain beside the lantern. Every village needs a wish.',stamp:'Wish keeper'},
   {id:'parade',name:'The clockwork parade',icon:'🎏',cost:{gear:12,meal:12,fish:6},tier:2,reward:'Kites and little clockwork ducks around your gathering place.',stamp:'Small wonders'},
-  {id:'fair',name:'The starlight fair',icon:'🎈',cost:{gear:20,plank:24,meal:18},tier:3,letters:3,reward:'A permanent fairground canopy; happy evenings send balloons skyward.',stamp:'A village in bloom'}
+  {id:'fair',name:'The starlight fair',icon:'🎈',cost:{gear:20,plank:24,meal:18},tier:3,letters:3,reward:'Permanent fairground bunting; happy evenings send balloons skyward.',stamp:'A village in bloom'}
 ];
 export const BUILDING_PURPOSE={
   hut:['More little hands','Adds a resident who gathers wood, stone and clearing jobs.','More residents need more supper.'],
@@ -48,7 +48,7 @@ export function configureBloom(engine){E=engine;}
 const stock=(s,k)=>k==='wood'||k==='stone'?s[k]:(s.industry.goods[k]||0);
 const pay=(s,k,n)=>{if(k==='wood'||k==='stone')s[k]-=n;else s.industry.goods[k]=(s.industry.goods[k]||0)-n;};
 const event=(s,type,data={})=>{s.events.push({type,...data});if(s.events.length>100)s.events.shift();};
-export function initBloom(s){s.bloom={version:1,mood:55,lastMealDay:-1,served:0,suppers:0,goodSuppers:0,lastCoverage:0,lastVariety:0,projects:[],pinned:'picnic',festUntil:0,autoConnect:true,theme:0,welcomed:0,lastSupper:null};}
+export function initBloom(s){s.bloom={version:1,mood:55,lastMealDay:-1,served:0,suppers:0,goodSuppers:0,lastCoverage:0,lastVariety:0,projects:[],pinned:'picnic',festUntil:0,autoConnect:true,fundWish:true,theme:0,welcomed:0,lastSupper:null};}
 export function welcomeBloom(s){const b=s.bloom;if(!b)return;const newcomers=s.folk.length-b.welcomed;if(newcomers>0){s.industry.goods.meal=(s.industry.goods.meal||0)+newcomers*2;b.welcomed=s.folk.length;}}
 export function supperInfo(s){const b=s.bloom,n=s.folk.length,day=Math.floor(s.t/240),meals=Math.floor(stock(s,'meal'));return {n,day,meals,ready:Math.min(n,meals),served:b.lastMealDay===day,seconds:Math.max(0,(b.lastMealDay===day?426:186)-(s.t%240)),variety:['berry','fish'].filter(k=>stock(s,k)>=Math.max(1,Math.ceil(n/3))).length};}
 export function serveSupper(s,automatic=false){
@@ -89,10 +89,11 @@ export function bloomGoal(s){
   const supper=supperInfo(s);
   const base={tag:p?`Village wish · ${p.name}`:'Your living village',progress:p?projectStatus(s,p).progress:1};
   const build=(type,text)=>({...base,title:`${E.BUILDINGS[type].short}: ${BUILDING_PURPOSE[type]?.[0]||'the next step'}`,text,button:`Place ${E.BUILDINGS[type].short.toLowerCase()}`,build:type});
-  const machineStep=type=>{const b=s.buildings.find(v=>v.type===type);if(!b)return build(type,BUILDING_PURPOSE[type]?.[2]||'Add this part of your production chain.');const r=E.RECIPES[type],m=s.industry.machines[b.id];if(r?.power&&m?.power<=0)return build('windmill',`Your ${E.BUILDINGS[type].short.toLowerCase()} needs a windmill within its ring.`);
+  const machineStep=type=>{const b=s.buildings.find(v=>v.type===type);if(!b)return build(type,BUILDING_PURPOSE[type]?.[2]||'Add this part of your production chain.');const r=E.RECIPES[type],m=s.industry.machines[b.id];if(r?.power&&m?.power<.75)return build('windmill',`Your ${E.BUILDINGS[type].short.toLowerCase()} needs more nearby wind power. Another windmill helps every workshop in its ring.`);
     if(r){const routes=s.industry.routes,hasIn=Object.keys(r.input).every(k=>routes.some(q=>q.to===b.id&&!q.paused&&(q.filter==='auto'||q.filter===k)&&E.compatible(s,s.buildings.find(v=>v.id===q.from),b).includes(k))),hasOut=r.output==='star'||routes.some(q=>q.from===b.id&&!q.paused);if(!hasIn||!hasOut||m?.paused)return {...base,title:`Wake up your ${E.BUILDINGS[type].short.toLowerCase()}`,text:!hasIn||!hasOut?'Tap Connect storage. Supplies go in; finished goods come home.':'This workshop is paused. Resume it to keep the chain moving.',button:'Show this building',inspect:b.id};}return null;};
   // Food is introduced before industry, and a short chain is enough to maintain every resident.
   for(const type of ['vegetable','kitchen']){const action=machineStep(type);if(action)return action;}
+  if(s.folk.length<3)return build('hut','More friends gather more materials. Each arrival brings two welcome meals.');
   if(!p)return {...base,title:supper.ready<supper.n?'Keep the supper table ready':'Make tonight a little brighter',text:`${supper.ready}/${supper.n} bowls ready · ${supper.variety}/2 side dishes. Your landmarks stay forever.`,button:'Open village board',board:true};
   const st=projectStatus(s,p);if(st.ready)return {...base,title:`Build ${p.name.toLowerCase()}`,text:p.reward,button:'Claim your village landmark',board:true};
   let needs=p.cost;
@@ -110,9 +111,22 @@ export function bloomGoal(s){
 export function restoreBloom(s,raw){
   const v=raw.bloom;initBloom(s);if(!v){welcomeBloom(s);return;}
   const valid=(v,a,b)=>typeof v==='number'&&Number.isFinite(v)&&v>=a&&v<=b;
-  if(v.version!==1||!valid(v.mood,0,100)||!valid(v.lastMealDay,-1,1e10)||!Number.isInteger(v.lastMealDay)||!Array.isArray(v.projects)||v.projects.length>PROJECTS.length||new Set(v.projects).size!==v.projects.length||v.projects.some(k=>!PROJECTS.some(p=>p.id===k)))throw new Error('Invalid village care data.');
+  if(v.version!==1||!valid(v.mood,0,100)||!valid(v.lastMealDay,-1,1e10)||!Number.isInteger(v.lastMealDay)||!Array.isArray(v.projects)||v.projects.length>PROJECTS.length||new Set(v.projects).size!==v.projects.length||v.projects.some(k=>!PROJECTS.some(p=>p.id===k))||(v.fundWish!==undefined&&typeof v.fundWish!=='boolean'))throw new Error('Invalid village care data.');
   for(const k of ['served','suppers','goodSuppers','welcomed'])if(!valid(v[k],0,k==='welcomed'?24:1e12)||!Number.isInteger(v[k]))throw new Error('Invalid supper history.');
   if(!valid(v.lastCoverage,0,1)||!valid(v.lastVariety,0,2)||!valid(v.festUntil,0,1e12)||!valid(v.theme,0,3)||!Number.isInteger(v.theme)||typeof v.autoConnect!=='boolean')throw new Error('Invalid village preferences.');
   if(v.lastSupper&&(!valid(v.lastSupper.day,0,1e10)||!valid(v.lastSupper.count,0,24)||!valid(v.lastSupper.total,1,24)||v.lastSupper.count>v.lastSupper.total||!Array.isArray(v.lastSupper.sides)||v.lastSupper.sides.length>2||v.lastSupper.sides.some(k=>!['berry','fish'].includes(k))))throw new Error('Invalid supper record.');
-  s.bloom={version:1,mood:v.mood,lastMealDay:v.lastMealDay,served:v.served,suppers:v.suppers,goodSuppers:v.goodSuppers,lastCoverage:v.lastCoverage,lastVariety:v.lastVariety,projects:[...v.projects],pinned:PROJECTS.some(p=>p.id===v.pinned)?v.pinned:'picnic',festUntil:v.festUntil,autoConnect:v.autoConnect,theme:v.theme,welcomed:Math.max(s.folk.length,v.welcomed),lastSupper:v.lastSupper?{day:v.lastSupper.day,count:v.lastSupper.count,total:v.lastSupper.total,sides:[...v.lastSupper.sides]}:null};
+  s.bloom={version:1,mood:v.mood,lastMealDay:v.lastMealDay,served:v.served,suppers:v.suppers,goodSuppers:v.goodSuppers,lastCoverage:v.lastCoverage,lastVariety:v.lastVariety,projects:[...v.projects],pinned:PROJECTS.some(p=>p.id===v.pinned)?v.pinned:'picnic',festUntil:v.festUntil,autoConnect:v.autoConnect,fundWish:v.fundWish!==false,theme:v.theme,welcomed:Math.max(s.folk.length,v.welcomed),lastSupper:v.lastSupper?{day:v.lastSupper.day,count:v.lastSupper.count,total:v.lastSupper.total,sides:[...v.lastSupper.sides]}:null};
+}
+
+/** Hold only shared-store stock, never goods already inside workshops or in transit.
+ * The visible wish budget prevents downstream factories from consuming the materials
+ * needed for progress. Players may turn it off on the village board. */
+export function fundingPlan(s){
+  if(!s.bloom||s.bloom.fundWish===false||!s.folk.length)return {};
+  const p=PROJECTS.find(p=>p.id===s.bloom.pinned&&!s.bloom.projects.includes(p.id))||PROJECTS.find(p=>!s.bloom.projects.includes(p.id));
+  if(!p)return {};
+  const goal=bloomGoal(s),d=goal?.build?E.BUILDINGS[goal.build]:null;
+  const held={...(s.industry.tier<p.tier?E.RESEARCH[s.industry.tier].cost:p.cost)};
+  if(d)for(const [k,n] of Object.entries({wood:d.wood,stone:d.stone,...d.extra}))held[k]=Math.max(held[k]||0,n);
+  return held;
 }

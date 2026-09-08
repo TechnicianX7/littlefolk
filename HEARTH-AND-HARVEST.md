@@ -47,6 +47,8 @@ Open **Village wishes**. Each project shows material progress, its prerequisite 
 4. Clockwork parade: 12 gears, 12 meals and 6 fish, chapter 2; clockwork ducks and kites.
 5. Starlight Fair: 20 gears, 24 planks and 18 meals, chapter 3 and three star letters; festive village decorations and celebratory balloons.
 
+**Set aside supplies for my next wish** is on by default. Home storage holds the materials needed for your next project or research chapter and recommended building; factory routes use the surplus. This prevents downstream workshops from eating every plank you need to progress. The reserved goods remain spendable, and you can switch this budgeting off on the village board. Early guidance also encourages three residents and additional windmills when power is stretched.
+
 Projects never expire and do not reset on a quiet day. Research still unlocks factories; village projects give their output a tangible purpose. All five projects completed means the village's main aspiration is achieved, not that the game ends. Continue redesigning and maintaining your living village.
 
 ## Color and controls

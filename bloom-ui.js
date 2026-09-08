@@ -1,7 +1,7 @@
 /* Glanceable building cards, community wishes, and original pixel-art village flourishes. */
 import {BUILDINGS,TILE,W,H,walkable,buildingAt} from './world.js';
 import {ITEMS,RECIPES,RESEARCH,stock,connectStorage,compatible,isHub} from './industry.js';
-import {PROJECTS,BUILDING_PURPOSE,FOOD_BUILDINGS,projectStatus,completeProject,serveSupper,supperInfo,moodName} from './bloom.js';
+import {PROJECTS,BUILDING_PURPOSE,FOOD_BUILDINGS,projectStatus,completeProject,serveSupper,supperInfo,moodName,fundingPlan} from './bloom.js';
 const $=id=>document.getElementById(id);
 const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const ICONS={wood:'🪵',stone:'🪨',veg:'🥕',berry:'🫐',fish:'🐟',meal:'🍲',plank:'▰',brick:'▤',ore:'◆',coal:'●',iron:'▱',gear:'⚙',star:'✦'};
@@ -33,6 +33,7 @@ export function installBloomUI(api){
   $('villageTabs').onclick=e=>{const b=e.target.closest('[data-vtab]');if(b){tab=b.dataset.vtab;renderBoard();}};
   function open(which='wishes'){tab=which;renderBoard();api.openModal('villageBack');}
   function choose(type){api.closeModal('villageBack');api.chooseBuild(type);}
+  $('villageContent').addEventListener('change',e=>{if(e.target.id==='fundWish'){S().bloom.fundWish=e.target.checked;api.changed();renderBoard();}});
   $('villageContent').onclick=e=>{const b=e.target.closest('button');if(!b)return;let result;
     if(b.dataset.guide){choose(b.dataset.guide);return;}
     if(b.dataset.pin){S().bloom.pinned=b.dataset.pin;api.changed();api.closeModal('villageBack');return;}
@@ -49,6 +50,7 @@ export function installBloomUI(api){
     let html='';
     if(tab==='wishes'){
       html=`<div class="villageNorthStar"><b>Bring the Starlight Fair to life.</b><span>${care.projects.length} / ${PROJECTS.length} permanent landmarks</span><div class="progress"><span style="width:${care.projects.length/PROJECTS.length*100}%"></span></div><p>Grow food. Connect workshops. Turn their goods into a village that changes before your eyes.</p></div>`;
+      html+=`<label class="autoConnect"><input type="checkbox" id="fundWish" ${care.fundWish!==false?'checked':''}> Set aside supplies for my next wish <small>Factories use the surplus. Saved supplies stay spendable for you.</small></label><div class="costchips">${care.fundWish!==false?Object.entries(fundingPlan(s)).filter(([,n])=>n>0).map(([k,n])=>chip(k,n)).join(''):''}</div>`;
       for(const p of PROJECTS){const v=projectStatus(s,p),pinned=care.pinned===p.id;html+=`<article class="wishCard ${v.done?'complete':''} ${pinned?'pinned':''}"><div class="wishTitle"><span aria-hidden="true">${p.icon}</span><div><small>${v.done?'STAMP EARNED · '+p.stamp:pinned?'YOUR PINNED WISH':!v.before?'AFTER THE PREVIOUS LANDMARK':'VILLAGE PROJECT'}</small><h3>${p.name}</h3></div>${v.done?'<b aria-label="completed">✓</b>':''}</div><p>${p.reward}</p>${v.done?'':`<div class="costchips">${Object.entries(p.cost).map(([k,n])=>`<span class="goodchip ${stock(s,k)>=n?'enough':'short'}">${ICONS[k]} ${Math.min(n,Math.floor(stock(s,k)))}/${n} ${ITEMS[k].name.toLowerCase()}</span>`).join('')}</div>${p.tier?`<small>${v.research?'✓':'🔒'} Research chapter ${p.tier}</small>`:''}${p.letters?`<small> · ${Math.min(p.letters,s.industry.postcards)}/${p.letters} star letters sent</small>`:''}<div class="smallactions"><button class="primary" data-project="${p.id}" ${v.ready?'':'disabled'}>Build landmark</button><button class="secondary" data-pin="${p.id}" ${!v.before?'disabled':''}>${pinned?'Follow this wish':'Pin this wish'}</button></div>`}</article>`;}
       html+='<button class="secondary wide" id="showChains">Show me the production chains</button><div class="villageNorthStar"><h3>Your village palette</h3><div class="themeOptions">'+['Terracotta','Seaside','Blossom','Meadow'].map((n,i)=>`<button class="secondary ${care.theme===i?'active':''}" data-theme="${i}" aria-pressed="${care.theme===i}">${n}</button>`).join('')+'</div></div>';
     }
