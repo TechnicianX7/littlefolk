@@ -1,0 +1,9 @@
+/* Shared visual language, inside the existing contextual rail. */
+#networkBtn {white-space:nowrap;min-height:40px} #networkBtn[aria-pressed="true"]{background:#d7e5d3;color:#315953}
+#laneLegend {font-size:10px;background:#f7f3e6ed;border-radius:8px;padding:5px 9px;color:#526257;pointer-events:none;width:max-content;max-width:100%;box-sizing:border-box}
+#laneLegend .in {color:#327e91} #laneLegend .out {color:#95602e}
+.siteLegend{display:flex;flex-wrap:wrap;gap:8px;font-size:10px;color:#56685d;padding:7px 0}.siteLegend i{display:inline-block;width:8px;height:8px;margin-right:4px;border:1px solid #668879}.siteLegend .amber{background:#efc879}.siteLegend .green{background:#cde5b0}.siteLegend .red{background:#d18e83}
+.siteFacts{font-size:11px;line-height:1.5;color:#56685d;background:#e5ebd840;border:1px solid #d8dfc9;border-radius:8px;padding:7px 9px;margin:7px 0}
+.connectionList{border-top:1px solid #d8dfc9;margin-top:10px;padding-top:8px}.connectionList h4{font-size:11px;margin:0 0 6px;letter-spacing:.5px}.connectionRow{display:grid;grid-template-columns:20px 1fr;gap:4px;text-align:left;width:100%;border-radius:7px;background:#e9eddf90;margin:4px 0;padding:7px;font-size:11px;min-height:44px;color:#476251}.connectionRow .arrow{font-weight:700;color:#327e91;font-size:17px}.connectionRow.out .arrow{color:#95602e}.connectionRow small{display:block;font-size:10px;line-height:1.4;color:#6d7767}.connectionRow:hover{background:#dfe8d7}.laneNote{font-size:10px;line-height:1.4;color:#697965}.flowStats{display:flex;gap:6px;flex-wrap:wrap}.flowStats span{padding:5px 8px;border:1px solid #d7dfc9;border-radius:6px;font-size:11px}.networkGuide{border-left:3px solid #809d85;padding:4px 12px;line-height:1.5;font-size:12px}
+#paveCost{font-variant-numeric:tabular-nums} .goal .goalChapter{font-size:10px;letter-spacing:1px;color:#6b805e;padding-top:8px}
+@media(max-width:600px){#laneLegend{font-size:9px}.connectionRow{font-size:10px}.siteFacts{font-size:10px}}
