@@ -1,7 +1,7 @@
 name: Village checks
 on:
   push:
-    branches: [main, release/hearth-harvest-2.2]
+    branches: [main, release/village-works-2.3]
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,11 +18,11 @@ jobs:
           persist-credentials: false
       - name: Check JavaScript
         run: npm run check
-      - name: Test village, industry, land, meals and a complete playthrough
+      - name: Test village, industry, land, meals, lanes and complete progression
         shell: bash
         run: |
           set -o pipefail
-          node --test tests/*.test.mjs | tee unit-results.txt
+          node --test --test-concurrency=1 tests/*.test.mjs | tee unit-results.txt
       - name: Prepare browser tests
         run: |
           npm install --no-save --ignore-scripts playwright
@@ -35,6 +35,8 @@ jobs:
         run: node tests/qol.browser.mjs
       - name: Test food, wishes, building guides, area clearing and 5x play
         run: node tests/bloom.browser.mjs
+      - name: Test delivery lanes, building previews and touch paving
+        run: node tests/lanes.browser.mjs
       - name: Keep source and visual test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -53,6 +55,9 @@ jobs:
             bloom.js
             bloom-ui.js
             bloom.css
+            lanes.js
+            lanes-ui.js
+            lanes.css
             sw.js
             manifest.webmanifest
             icon.svg
@@ -61,6 +66,7 @@ jobs:
             TIMBER.md
             ROOM-TO-GROW.md
             HEARTH-AND-HARVEST.md
+            VILLAGE-WORKS.md
             tests/
             artifacts/
             unit-results.txt
