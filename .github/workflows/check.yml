@@ -1,7 +1,7 @@
 name: Village checks
 on:
   push:
-    branches: [main, release/room-to-grow-2.1]
+    branches: [main, release/hearth-harvest-2.2]
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,14 +11,14 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Check JavaScript
         run: npm run check
-      - name: Test village, industry and land simulation
+      - name: Test village, industry, land, meals and a complete playthrough
         shell: bash
         run: |
           set -o pipefail
@@ -33,6 +33,8 @@ jobs:
         run: node tests/timber.browser.mjs
       - name: Test intuitive controls, clearing, movement and panel layout
         run: node tests/qol.browser.mjs
+      - name: Test food, wishes, building guides, area clearing and 5x play
+        run: node tests/bloom.browser.mjs
       - name: Keep source and visual test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -48,6 +50,9 @@ jobs:
             industry.css
             qol-ui.js
             qol.css
+            bloom.js
+            bloom-ui.js
+            bloom.css
             sw.js
             manifest.webmanifest
             icon.svg
@@ -55,6 +60,7 @@ jobs:
             README.md
             TIMBER.md
             ROOM-TO-GROW.md
+            HEARTH-AND-HARVEST.md
             tests/
             artifacts/
             unit-results.txt
