@@ -14,11 +14,16 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Apply exact-source integration
-        run: python3 tools/hearth_integrate.py
+      - name: Apply exact-source integration and progression polish
+        shell: bash
+        run: |
+          if ! grep -q '"version": "2.2.0"' package.json; then
+            python3 tools/hearth_integrate.py
+          fi
+          python3 tools/hearth_polish.py
       - name: Check JavaScript
         run: npm run check
-      - name: Test village, factory, food, projects and clearing
+      - name: Test village, factory, food, projects and a complete playthrough
         shell: bash
         run: |
           set -o pipefail
@@ -41,9 +46,9 @@ jobs:
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app.js world.js industry.js industry-ui.js qol-ui.js index.html sw.js package.json README.md bloom-ui.js tests/qol.test.mjs tests/timber.browser.mjs
+          git add app.js world.js industry.js industry-ui.js qol-ui.js index.html sw.js package.json README.md bloom.js bloom-ui.js HEARTH-AND-HARVEST.md tests/qol.test.mjs tests/timber.browser.mjs tests/bloom.browser.mjs
           if ! git diff --cached --quiet; then
-            git commit -m 'Integrate tested Littlefolk 2.2: Hearth and Harvest'
+            git commit -m 'Finish tested Hearth and Harvest progression and wish budgeting'
             git push origin HEAD:build/hearth-harvest
           fi
           git rev-parse HEAD
@@ -63,5 +68,6 @@ jobs:
             *.md
             tests/
             tools/hearth_integrate.py
+            tools/hearth_polish.py
             artifacts/
             unit-results.txt
