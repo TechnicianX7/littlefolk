@@ -1,0 +1,67 @@
+name: Hearth and Harvest integration
+on:
+  push:
+    branches: [build/hearth-harvest]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: hearth-harvest-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply exact-source integration
+        run: python3 tools/hearth_integrate.py
+      - name: Check JavaScript
+        run: npm run check
+      - name: Test village, factory, food, projects and clearing
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test tests/*.test.mjs | tee unit-results.txt
+      - name: Prepare browser engines
+        run: |
+          npm install --no-save --ignore-scripts playwright
+          npx playwright install --with-deps chromium webkit
+      - name: Original village, saves and offline cache
+        run: node tests/browser.mjs
+      - name: Factory touch controls, frame recovery and legacy saves
+        run: node tests/timber.browser.mjs
+      - name: Construction, land management and layout bounds
+        run: node tests/qol.browser.mjs
+      - name: Food, wishes, hover knowledge and 5x touch play
+        run: node tests/bloom.browser.mjs
+      - name: Commit only verified runtime changes
+        shell: bash
+        run: |
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app.js world.js industry.js industry-ui.js qol-ui.js index.html sw.js package.json README.md bloom-ui.js tests/qol.test.mjs tests/timber.browser.mjs
+          if ! git diff --cached --quiet; then
+            git commit -m 'Integrate tested Littlefolk 2.2: Hearth and Harvest'
+            git push origin HEAD:build/hearth-harvest
+          fi
+          git rev-parse HEAD
+      - name: Keep source, reports and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hearth-harvest-checked-build
+          retention-days: 7
+          path: |
+            *.js
+            *.css
+            *.html
+            *.json
+            *.webmanifest
+            *.svg
+            *.md
+            tests/
+            tools/hearth_integrate.py
+            artifacts/
+            unit-results.txt
