@@ -25,7 +25,7 @@ export function drawLanes(c,s,selection,all=false){
   trace(c,net.edges);c.lineWidth=7;c.strokeStyle='#d5c6a0';c.stroke();
   for(const i of net.cells){const x=(i%W)*TILE+8,y=Math.floor(i/W)*TILE+8;if(s.tiles[i].path){c.fillStyle='#b4bab0';c.fillRect(x-4,y-4,8,8);c.fillStyle='#dce0ca';c.fillRect(x-3,y-3,3,2);c.fillRect(x+1,y,2,3);}else if(i%3===0){c.fillStyle='#a9997766';c.fillRect(x-3,y-2,2,1);c.fillRect(x+1,y+2,2,1);}}
   for(const {point:p} of net.ports){const x=p.x*TILE,y=p.y*TILE;c.fillStyle='#927959';c.fillRect(x-5,y-4,10,8);c.fillStyle='#e8d2a0';c.fillRect(x-4,y-3,8,2);c.fillRect(x-4,y,8,2);}
-  if(all||selection?.kind==='building')for(const r of s.industry.routes){if(!all&&r.from!==selection.id&&r.to!==selection.id)continue;if(!r.path?.length)continue;
+  if(all||selection?.kind==='building')for(const r of s.industry.routes){if(selection?.kind==='building'&&r.from!==selection.id&&r.to!==selection.id)continue;if(!r.path?.length)continue;
     const selected=selection?.kind==='building',from=s.buildings.find(b=>b.id===r.from),to=s.buildings.find(b=>b.id===r.to),item=r.filter==='auto'?compatible(s,from,to)[0]:r.filter;
     c.strokeStyle=r.paused?'#8f9592':selected?(r.from===selection.id?'#c58637':'#327e91'):(ITEMS[item]?.color||'#52796a');c.fillStyle=c.strokeStyle;c.lineWidth=1.3;
     for(let j=1;j<r.path.length;j++){const a=r.path[j-1],b=r.path[j],dx=b.x-a.x,dy=b.y-a.y,ox=-dy*1.6,oy=dx*1.6;c.beginPath();c.moveTo(a.x*TILE+ox,a.y*TILE+oy);c.lineTo(b.x*TILE+ox,b.y*TILE+oy);c.stroke();

@@ -22,7 +22,7 @@ export const PROJECTS=[
 ];
 export const BUILDING_PURPOSE={
   hut:['More little hands','Adds a resident who gathers wood, stone and clearing jobs.','More residents need more supper.'],
-  path:['Shorter delivery times','Folk and cargo wagons walk 65% faster on these tiles.','Link your busiest buildings.'],
+  path:['Shorter delivery times','Folk and cargo wagons walk 65% faster on these tiles.','Tap a start and end tile, then confirm the whole paved walk.'],
   depot:['A local delivery hub','Shares all home stock. Shorter wagon trips improve your whole chain.','Storage is shared, not another factory.'],
   lumber:['Faster woodland work','Boosts nearby woodcutting. It does not manufacture or accept cargo.','Place within 7 tiles of trees.'],
   quarry:['Faster stone gathering','Boosts nearby stone gathering. No cargo inputs needed.','Place within 7 tiles of stones.'],
@@ -85,12 +85,12 @@ export function stepBloom(s,dt){
 export const moodName=s=>s.bloom.mood>=80?'Flourishing':s.bloom.mood>=50?'Cozy':'Quiet';
 export function bloomGoal(s){
   if(!s.folk.length)return null;
-  const p=PROJECTS.find(p=>p.id===s.bloom.pinned&&!s.bloom.projects.includes(p.id))||PROJECTS.find(p=>!s.bloom.projects.includes(p.id));
+  const p=PROJECTS.find(p=>!s.bloom.projects.includes(p.id));
   const supper=supperInfo(s);
   const base={tag:p?`Village wish · ${p.name}`:'Your living village',progress:p?projectStatus(s,p).progress:1};
   const build=(type,text)=>({...base,title:`${E.BUILDINGS[type].short}: ${BUILDING_PURPOSE[type]?.[0]||'the next step'}`,text,button:`Place ${E.BUILDINGS[type].short.toLowerCase()}`,build:type});
-  const machineStep=type=>{const b=s.buildings.find(v=>v.type===type);if(!b)return build(type,BUILDING_PURPOSE[type]?.[2]||'Add this part of your production chain.');const r=E.RECIPES[type],m=s.industry.machines[b.id];if(r?.power&&m?.power<.75)return build('windmill',`Your ${E.BUILDINGS[type].short.toLowerCase()} needs more nearby wind power. Another windmill helps every workshop in its ring.`);
-    if(r){const routes=s.industry.routes,hasIn=Object.keys(r.input).every(k=>routes.some(q=>q.to===b.id&&!q.paused&&(q.filter==='auto'||q.filter===k)&&E.compatible(s,s.buildings.find(v=>v.id===q.from),b).includes(k))),hasOut=r.output==='star'||routes.some(q=>q.from===b.id&&!q.paused);if(!hasIn||!hasOut||m?.paused)return {...base,title:`Wake up your ${E.BUILDINGS[type].short.toLowerCase()}`,text:!hasIn||!hasOut?'Tap Connect storage. Supplies go in; finished goods come home.':'This workshop is paused. Resume it to keep the chain moving.',button:'Show this building',inspect:b.id};}return null;};
+  const machineStep=(type,needHome=false)=>{const b=s.buildings.find(v=>v.type===type);if(!b)return build(type,BUILDING_PURPOSE[type]?.[2]||'Add this part of your production chain.');const r=E.RECIPES[type],m=s.industry.machines[b.id];if(m?.paused)return {...base,title:`Resume your ${E.BUILDINGS[type].short.toLowerCase()}`,text:'This workshop is paused. Resume it in More options.',button:'Show this building',inspect:b.id};if(r?.power&&m?.power<.75)return build('windmill',`Your ${E.BUILDINGS[type].short.toLowerCase()} needs more nearby wind power. Another windmill helps every workshop in its ring.`);
+    if(r){const routes=s.industry.routes,hasIn=Object.keys(r.input).every(k=>routes.some(q=>q.to===b.id&&!q.paused&&(q.filter==='auto'||q.filter===k)&&E.compatible(s,s.buildings.find(v=>v.id===q.from),b).includes(k))),hasOut=r.output==='star'||routes.some(q=>q.from===b.id&&!q.paused&&(!needHome||['hut','depot'].includes(s.buildings.find(v=>v.id===q.to)?.type)));if(!hasIn||!hasOut||m?.paused)return {...base,title:`Wake up your ${E.BUILDINGS[type].short.toLowerCase()}`,text:!hasIn||!hasOut?'Tap Connect storage. Supplies go in; finished goods come home.':'This workshop is paused. Resume it to keep the chain moving.',button:'Show this building',inspect:b.id};}return null;};
   // Food is introduced before industry, and a short chain is enough to maintain every resident.
   for(const type of ['vegetable','kitchen']){const action=machineStep(type);if(action)return action;}
   if(s.folk.length<3)return build('hut','More friends gather more materials. Each arrival brings two welcome meals.');
@@ -99,10 +99,10 @@ export function bloomGoal(s){
   let needs=p.cost;
   if(!st.research){const r=E.RESEARCH[s.industry.tier];if(Object.entries(r.cost).every(([k,n])=>stock(s,k)>=n))return {...base,title:'Your next research chapter is ready',text:r.unlocks,button:'Unlock the next chapter',book:'research'};needs=r.cost;}
   const producers={veg:'vegetable',meal:'kitchen',berry:'orchard',fish:'fishery',plank:'sawmill',brick:'mason',ore:'mine',coal:'kiln',iron:'smelter',gear:'gearworks',star:'skypost'};
-  function ensure(k,visited=new Set()){if(visited.has(k))return null;visited.add(k);const type=producers[k];if(!type)return null;const d=E.BUILDINGS[type];if((d.tier||0)>s.industry.tier)return null;
-    const r=E.RECIPES[type];for(const input of Object.keys(r.input)){if(producers[input]){const upstream=ensure(input,visited);if(upstream)return upstream;}}
+  function ensure(k,visited=new Set(),needHome=true){if(visited.has(k))return null;visited.add(k);const type=producers[k];if(!type)return null;const d=E.BUILDINGS[type];if((d.tier||0)>s.industry.tier)return null;
+    const r=E.RECIPES[type];for(const input of Object.keys(r.input)){if(producers[input]){const upstream=ensure(input,visited,false);if(upstream)return upstream;}}
     if(s.delivered<d.unlock)return {...base,title:'A little more gathering',text:`${s.delivered}/${d.unlock} raw materials delivered. Clearing land also supplies the village.`,button:'Make room and gather',land:true};
-    return machineStep(type);
+    return machineStep(type,needHome);
   }
   for(const [k,n] of Object.entries(needs))if(stock(s,k)<n){const a=ensure(k);if(a)return a;}
   if(!st.mail){const a=ensure('star');if(a)return a;}
@@ -123,7 +123,7 @@ export function restoreBloom(s,raw){
  * needed for progress. Players may turn it off on the village board. */
 export function fundingPlan(s){
   if(!s.bloom||s.bloom.fundWish===false||!s.folk.length)return {};
-  const p=PROJECTS.find(p=>p.id===s.bloom.pinned&&!s.bloom.projects.includes(p.id))||PROJECTS.find(p=>!s.bloom.projects.includes(p.id));
+  const p=PROJECTS.find(p=>!s.bloom.projects.includes(p.id));
   if(!p)return {};
   const goal=bloomGoal(s),d=goal?.build?E.BUILDINGS[goal.build]:null;
   const held={...(s.industry.tier<p.tier?E.RESEARCH[s.industry.tier].cost:p.cost)};

@@ -1,5 +1,6 @@
 /* Timber & Tinkering: deterministic production, renewable power and physical cargo.
    No network, wall-clock simulation, or external dependencies. */
+import {configureLanes,cargoLane,refreshLanes,routeLength,laneMetrics} from './lanes.js';
 import {FOOD_ITEMS,FOOD_BUILDINGS,FOOD_RECIPES,fundingPlan} from './bloom.js';
 export const ITEMS = {...FOOD_ITEMS,
   wood:{name:'Wood',color:'#bc8855'},stone:{name:'Stone',color:'#9cad9c'},
@@ -38,7 +39,7 @@ export const RESEARCH = [
 ];
 const CAP=24, MAX_ROUTES=64;
 let E;
-export function configureIndustry(engine){ E=engine; }
+export function configureIndustry(engine){ E=engine;configureLanes(engine); }
 export const isHub=b=>!!b&&['hut','depot'].includes(b.type);
 const getB=(s,id)=>s.buildings.find(b=>b.id===id);
 const center=b=>({x:b.x+1,y:b.y+1});
@@ -65,10 +66,8 @@ export function industryPlacement(s,type,x,y,ignoreCost=false){
 export function industryPay(s,type){for(const [k,n] of Object.entries(EXTRA_BUILDINGS[type]?.extra||{}))addStock(s,k,-n);}
 export function industryBuilt(s,b){if(RECIPES[b.type])s.industry.machines[b.id]=freshMachine();}
 function rim(s,b){const out=[];for(let y=b.y-1;y<=b.y+2;y++)for(let x=b.x-1;x<=b.x+2;x++)if((x===b.x-1||x===b.x+2||y===b.y-1||y===b.y+2)&&E.walkable(s,x,y))out.push(y*E.W+x);return out;}
-function routePath(s,from,to){
-  const starts=rim(s,from).sort((a,b)=>distance({x:a%E.W,y:Math.floor(a/E.W)},to)-distance({x:b%E.W,y:Math.floor(b/E.W)},to)),goals=rim(s,to);
-  for(const i of starts){const start={x:i%E.W+.5,y:Math.floor(i/E.W)+.5},path=E.findPath(s,start,goals);if(path)return [center(from),start,...path,center(to)];}return null;
-}
+function routePath(s,from,to){return cargoLane(s,from,to);}
+
 const outputItems=(s,b)=>isHub(b)?Object.keys(ITEMS).filter(k=>k!=='star'):RECIPES[b?.type]?[RECIPES[b.type].output]:[];
 const inputItems=b=>isHub(b)?Object.keys(ITEMS).filter(k=>k!=='star'):Object.keys(RECIPES[b?.type]?.input||{});
 export function compatible(s,from,to){return outputItems(s,from).filter(k=>inputItems(to).includes(k));}
@@ -81,25 +80,43 @@ export function connect(s,fromId,toId,filter='auto'){
   if(i.routes.some(r=>r.from===fromId&&r.to===toId))return {ok:false,reason:'That route already exists.'};
   if(i.routes.length>=MAX_ROUTES)return {ok:false,reason:'This island supports 64 cargo routes.'};
   const path=routePath(s,from,to);if(!path)return {ok:false,reason:'No walking route. Leave a way between the buildings.'};
-  i.routes.push({id:i.nextId++,from:fromId,to:toId,filter,paused:false,cooldown:0,path,revision:s.topology||0,status:'Ready',delivered:0});
+  i.routes.push({id:i.nextId++,from:fromId,to:toId,filter,paused:false,cooldown:0,path,revision:s.topology||0,status:'Ready',delivered:0,managed:false,laneVersion:1});
   pushEvent(s,'route');return {ok:true};
 }
 /** Optional convenience wiring. Nothing is teleported and existing custom routes are retained. */
 export function connectStorage(s,id){
   const b=getB(s,id),recipe=RECIPES[b?.type];if(!recipe)return {ok:false,reason:'Choose a production workshop.'};
-  const hubs=s.buildings.filter(isHub).sort((a,c)=>distance(center(a),center(b))-distance(center(c),center(b)));
-  for(const hub of hubs){
-    const desired=[];
-    if(Object.keys(recipe.input).length&&!s.industry.routes.some(q=>q.from===hub.id&&q.to===id))desired.push([hub.id,id]);
-    if(recipe.output!=='star'&&!s.industry.routes.some(q=>q.from===id&&q.to===hub.id))desired.push([id,hub.id]);
-    if(!desired.length)return {ok:true,count:0,hub:hub.id};
-    if(s.industry.routes.length+desired.length>MAX_ROUTES)return {ok:false,reason:'Not enough route slots. Remove an unused route first.'};
-    const routesBefore=[...s.industry.routes],nextBefore=s.industry.nextId,eventCount=s.events.length;
-    const results=desired.map(([a,c])=>connect(s,a,c));
-    if(results.every(r=>r.ok))return {ok:true,count:desired.length,hub:hub.id};
-    s.industry.routes=routesBefore;s.industry.nextId=nextBefore;s.events.splice(eventCount);
+  refreshLanes(s);
+  const hubs=s.buildings.filter(isHub).map(hub=>({hub,path:routePath(s,hub,b)})).filter(v=>v.path).sort((a,c)=>laneMetrics(s,a).seconds-laneMetrics(s,c).seconds||a.hub.id-c.hub.id);
+  const hub=hubs[0]?.hub;if(!hub)return {ok:false,reason:'Place a reachable hut or stockpile nearby.'};
+  const desired=[];
+  // Existing manual suppliers count. A convenience click must not add redundant parallel feeds.
+  const hasIn=Object.keys(recipe.input).every(k=>s.industry.routes.some(q=>q.to===id&&!q.paused&&(q.filter==='auto'||q.filter===k)&&compatible(s,getB(s,q.from),b).includes(k)));
+  if(!hasIn&&!s.industry.routes.some(q=>q.from===hub.id&&q.to===id))desired.push([hub.id,id]);
+  if(recipe.output!=='star'&&!s.industry.routes.some(q=>q.from===id&&!q.paused&&isHub(getB(s,q.to)))&&!s.industry.routes.some(q=>q.from===id&&q.to===hub.id))desired.push([id,hub.id]);
+  if(s.industry.routes.length+desired.length>MAX_ROUTES)return {ok:false,reason:'Route limit reached. Re-plan storage links or remove an unused route.'};
+  let count=0;for(const [a,c] of desired){const r=connect(s,a,c);if(!r.ok)return r;s.industry.routes.at(-1).managed=true;count++;}
+  // A paused storage loop can be repaired without duplicating its route or cargo.
+  for(const q of s.industry.routes)if(q.from===hub.id&&q.to===id||q.from===id&&q.to===hub.id){if(q.paused){q.paused=false;count++;}}
+  refreshLanes(s);return {ok:true,count,hub:hub.id};
+}
+/** Explicit player action: only auto-created storage links move. Manual links are never changed. */
+export function optimizeStorage(s,includeExisting=false){
+  refreshLanes(s);let changed=0,saved=0;
+  for(const q of s.industry.routes.filter(q=>q.managed||includeExisting)){
+    const from=getB(s,q.from),to=getB(s,q.to),factory=isHub(from)?to:from;if(!factory||!RECIPES[factory.type]||!isHub(from)&&!isHub(to))continue;
+    const hubs=s.buildings.filter(isHub).map(hub=>({hub,path:routePath(s,hub,factory)})).filter(v=>v.path).sort((a,b)=>laneMetrics(s,a).seconds-laneMetrics(s,b).seconds||a.hub.id-b.hub.id);
+    const best=hubs[0];if(!best)continue;const a=isHub(from)?best.hub.id:factory.id,b=isHub(from)?factory.id:best.hub.id;
+    if((a===q.from&&b===q.to)||s.industry.routes.some(r=>r.id!==q.id&&r.from===a&&r.to===b))continue;
+    const faster=laneMetrics(s,q).seconds-laneMetrics(s,best).seconds;if(faster<=.01)continue;const gain=Math.max(0,routeLength(q.path)-routeLength(best.path));
+    q.from=a;q.to=b;q.managed=true;for(const p of s.industry.shipments.filter(p=>p.route===q.id))p.to=b;changed++;saved+=gain;
   }
-  return {ok:false,reason:'Place a reachable hut or stockpile nearby.'};
+  refreshLanes(s);return {ok:true,count:changed,saved:Math.round(saved)};
+}
+export function restoreFlowSettings(s){
+  s.industry.reserves={wood:12,stone:8};
+  s.industry.limits={veg:96,berry:72,fish:72,meal:120,wood:160,stone:160,plank:64,brick:64,ore:48,coal:48,iron:64,gear:32};
+  s.bloom.fundWish=true;return {ok:true};
 }
 
 function incoming(s,id,item){return s.industry.shipments.reduce((n,p)=>n+(p.to===id&&p.item===item?p.amount:0),0);}
@@ -136,7 +153,7 @@ export function demolish(s,id){
   for(const f of s.folk){f.path=[];f.mode='idle';f.timer=.2;f.target=null;}
   pushEvent(s,'salvage');return {ok:true};
 }
-function countEverywhere(s,item){const i=s.industry;return stock(s,item)+Object.values(i.machines).reduce((n,m)=>n+(m.output[item]||0)+(m.input[item]||0),0)+i.shipments.reduce((n,p)=>n+(p.item===item?p.amount:0),0);}
+function countEverywhere(s,item){const i=s.industry;return stock(s,item)+Object.values(i.machines).reduce((n,m)=>n+(m.output[item]||0),0)+i.shipments.reduce((n,p)=>n+(p.item===item?p.amount:0),0);}
 export function statistics(s,item){const i=s.industry;return {stored:stock(s,item),buffered:Object.values(i.machines).reduce((n,m)=>n+(m.output[item]||0),0),transit:i.shipments.reduce((n,p)=>n+(p.item===item?p.amount:0),0),made:i.history.filter(h=>h.item===item&&h.time>s.t-60&&h.amount>0).reduce((n,h)=>n+h.amount,0),used:-i.history.filter(h=>h.item===item&&h.time>s.t-60&&h.amount<0).reduce((n,h)=>n+h.amount,0)};}
 function history(s,item,amount){s.industry.history.push({time:s.t,item,amount});}
 const POSTCARDS=[
@@ -148,7 +165,7 @@ const POSTCARDS=[
   'The village sent a spare gear and a note: “For whatever you are trying to fix.”'
 ];
 export function stepIndustry(s,dt){
-  const i=s.industry;if(!i)return;wishBudgets.set(s,fundingPlan(s));
+  const i=s.industry;if(!i)return;refreshLanes(s);wishBudgets.set(s,fundingPlan(s));
   const activity=s.meeting?.2:1;dt*=activity;
   const machines=s.buildings.filter(b=>RECIPES[b.type]),mills=s.buildings.filter(b=>b.type==='windmill');
   for(const b of machines){const m=i.machines[b.id]||(i.machines[b.id]=freshMachine());m.power=RECIPES[b.type].power===0?1:0;}
@@ -159,7 +176,7 @@ export function stepIndustry(s,dt){
     if(m.power<=0){m.status='Needs nearby windmill';continue;}
     if(!m.batch){
       if((m.output[r.output]||0)+r.amount>CAP){m.status='Output full · add a route';continue;}
-      if(r.output!=='star'&&countEverywhere(s,r.output)>=(i.limits[r.output]||64)){m.status='Stock target reached';continue;}
+      if(r.output!=='star'&&countEverywhere(s,r.output)-Math.min(stock(s,r.output),Math.max(i.reserves[r.output]||0,(wishBudgets.get(s)||{})[r.output]||0))>=(i.limits[r.output]||64)){m.status='Stock target reached';continue;}
       const missing=Object.entries(r.input).filter(([k,n])=>(m.input[k]||0)<n);
       if(missing.length){m.status=`Waiting for ${missing.map(([k])=>ITEMS[k].name.toLowerCase()).join(' + ')}`;continue;}
       for(const [k,n] of Object.entries(r.input)){m.input[k]-=n;history(s,k,-n);}m.batch=true;m.progress=0;
@@ -176,7 +193,7 @@ export function stepIndustry(s,dt){
   // Arrivals are credited before dispatch. Reservations prevent simultaneous input overflow.
   const remaining=[];
   for(const p of i.shipments){
-    const r=i.routes.find(r=>r.id===p.route);if(!r||!r.path?.length){addStock(s,p.item,p.amount);continue;}
+    const r=i.routes.find(r=>r.id===p.route);if(!r){addStock(s,p.item,p.amount);continue;}if(!r.path?.length){remaining.push(p);continue;}
     const pos=cargoPosition(s,p),tile=s.tiles[Math.floor(pos.y)*E.W+Math.floor(pos.x)];
     p.travel+=dt*(2.2+i.logistics*.6)*(tile?.path?1.65:1);
     if(p.travel>=p.length){storeDelivery(s,p);r.delivered+=p.amount;}else remaining.push(p);
@@ -189,7 +206,7 @@ export function stepIndustry(s,dt){
   }
   for(const r of dispatch){
     const from=getB(s,r.from),to=getB(s,r.to);if(!from||!to){r.status='Endpoint missing';continue;}
-    if(r.revision!==(s.topology||0)){const p=routePath(s,from,to);if(p){r.path=p;r.revision=s.topology||0;for(const parcel of i.shipments.filter(p=>p.route===r.id)){const ratio=parcel.travel/parcel.length;parcel.length=pathLength(p);parcel.travel=ratio*parcel.length;}}else{r.status='Path blocked';continue;}}
+    if(!r.path?.length){r.status='Lane blocked';continue;}
     if(r.paused){r.status='Paused';continue;}
     r.cooldown-=dt;if(r.cooldown>0)continue;
     if(i.shipments.filter(p=>p.route===r.id).length>=1+i.logistics){r.status='Wagon on its way';continue;}
@@ -203,7 +220,7 @@ export function stepIndustry(s,dt){
   }
   i.history=i.history.filter(h=>h.time>s.t-60).slice(-800);
 }
-function pathLength(path){let sum=0;for(let j=1;j<path.length;j++)sum+=distance(path[j-1],path[j]);return Math.max(.1,sum);}
+function pathLength(path){return routeLength(path);}
 export function cargoPosition(s,p){const path=s.industry.routes.find(r=>r.id===p.route)?.path;if(!path?.length)return {x:22,y:17};let d=p.travel;for(let j=1;j<path.length;j++){const a=path[j-1],b=path[j],n=distance(a,b);if(d<=n)return {x:a.x+(b.x-a.x)*d/(n||1),y:a.y+(b.y-a.y)*d/(n||1)};d-=n;}return path[path.length-1];}
 export function restoreIndustry(s,raw){
   const v=raw.industry;initIndustry(s);if(!v)return;
@@ -216,8 +233,8 @@ export function restoreIndustry(s,raw){
   if(!v.machines||typeof v.machines!=='object'||!Array.isArray(v.routes)||v.routes.length>MAX_ROUTES||!Array.isArray(v.shipments)||v.shipments.length>MAX_ROUTES*3)fail();
   for(const b of s.buildings.filter(b=>RECIPES[b.type])){const m=v.machines[b.id],r=RECIPES[b.type];if(!m){i.machines[b.id]=freshMachine();continue;}if(!num(m.progress,0,r.seconds)||!integer(m.cycles,0,1e12)||typeof m.batch!=='boolean'||typeof m.paused!=='boolean')fail();i.machines[b.id]={...freshMachine(),input:bag(m.input,Object.keys(r.input),CAP),output:bag(m.output,[r.output],CAP),progress:m.progress,batch:m.batch,paused:m.paused,cycles:m.cycles};}
   const seen=new Set();
-  for(const r of v.routes){if(!integer(r.id,1,1e12)||seen.has(r.id)||typeof r.paused!=='boolean'||!num(r.delivered)||!num(r.cooldown,-1e6,3))fail();seen.add(r.id);const from=getB(s,r.from),to=getB(s,r.to);if(!from||!to||from.id===to.id||isHub(from)&&isHub(to))fail();const kinds=compatible(s,from,to);if(!kinds.length||r.filter!=='auto'&&!kinds.includes(r.filter))fail();const path=routePath(s,from,to);if(!path)fail();i.routes.push({id:r.id,from:r.from,to:r.to,filter:r.filter,paused:r.paused,cooldown:r.cooldown,delivered:r.delivered,path,revision:s.topology||0,status:'Ready'});}
+  for(const r of v.routes){if(!integer(r.id,1,1e12)||seen.has(r.id)||typeof r.paused!=='boolean'||!num(r.delivered)||!num(r.cooldown,-1e6,3))fail();seen.add(r.id);const from=getB(s,r.from),to=getB(s,r.to);if(!from||!to||from.id===to.id||isHub(from)&&isHub(to))fail();const kinds=compatible(s,from,to);if(!kinds.length||r.filter!=='auto'&&!kinds.includes(r.filter))fail();const path=routePath(s,from,to);if(!path)fail();i.routes.push({id:r.id,from:r.from,to:r.to,filter:r.filter,paused:r.paused,cooldown:r.cooldown,delivered:r.delivered,path,revision:s.topology||0,status:'Ready',managed:r.managed===true,laneVersion:1});}
   for(const p of v.shipments){const r=i.routes.find(r=>r.id===p.route);if(!r||!integer(p.id,1,1e12)||seen.has(p.id)||p.to!==r.to||!compatible(s,getB(s,r.from),getB(s,r.to)).includes(p.item)||!integer(p.amount,1,9)||!num(p.travel)||!num(p.length,.1,1e6)||p.travel>p.length)fail();seen.add(p.id);const length=pathLength(r.path);i.shipments.push({id:p.id,route:r.id,to:r.to,item:p.item,amount:p.amount,length,travel:p.travel/p.length*length});}
   for(const b of s.buildings.filter(b=>RECIPES[b.type]))for(const item of Object.keys(RECIPES[b.type].input))if((i.machines[b.id].input[item]||0)+incoming(s,b.id,item)>CAP)fail();
-  i.nextId=Math.max(i.nextId,...seen)+1;i.history=[];
+  i.nextId=Math.max(i.nextId,...seen)+1;i.history=[];refreshLanes(s);
 }

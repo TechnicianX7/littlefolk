@@ -1,5 +1,6 @@
+import {plotPlan} from './lanes-ui.js';
 /* Room to Grow: direct manipulation, contextual guidance and one non-overlapping panel rail. */
-import {W,H,TILE,BUILDINGS,placement,cost,place,markClearing,plantTree,removePath,movePlacement,moveBuilding,quickClear} from './world.js';
+import {W,H,TILE,BUILDINGS,placement,cost,place,markClearing,plantTree,removePath,movePlacement,moveBuilding,quickClear,planPaving,pave} from './world.js';
 import {ITEMS,RECIPES,RESEARCH,EXTRA_BUILDINGS,stock,connectStorage,isHub} from './industry.js';
 import {bloomGoal} from './bloom.js';
 import {buildingGuideHTML,ICONS} from './bloom-ui.js';
@@ -8,13 +9,13 @@ const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'
 const icons={...ICONS,wood:'🪵',stone:'🪨',plank:'▰',brick:'▤',ore:'◆',coal:'●',iron:'▱',gear:'⚙',star:'✦'};
 export const goodsHTML=goods=>Object.entries(goods).filter(([,v])=>v>0).map(([k,n])=>`<span class="goodchip"><i aria-hidden="true">${icons[k]||'◆'}</i><b>${n}</b> ${esc(ITEMS[k]?.name.toLowerCase()||k)}</span>`).join('');
 export function installQoL(api){
-  let box=null,dragId=null,shape='box';
+  let box=null,dragId=null,shape='box',paveFrom=null,paveTo=null,pavePlan=null;
   let site=null,moving=null,land=null,brush=1,resource=null,undo=null,goalTask=null,buildKey='',landKey='';
   const S=api.getState;
   const rail=document.createElement('div');rail.id='contextRail';rail.setAttribute('aria-label','Current task');$('app').append(rail);
   for(const el of [document.querySelector('.goal'),$('inspector'),$('buildHint'),$('routeHint')])rail.append(el);
   const status=document.createElement('div');status.id='statusbar';
-  status.innerHTML='<div id="resourceRibbon" aria-label="Crafted goods at home"></div><div class="statusrow"><div id="noticeSlot"></div></div>';
+  status.innerHTML='<div id="resourceRibbon" aria-label="Crafted goods at home"></div><div id="laneLegend" hidden><b class="in">Blue → in</b> · <b class="out">Gold → out</b> · Arrows show deliveries</div><div class="statusrow"><div id="noticeSlot"></div></div>';
   $('app').append(status);status.querySelector('.statusrow').prepend(document.querySelector('.timepill'));$('noticeSlot').append($('toast'));
   document.querySelector('.floating').remove();
   for(const k of ['plank','brick','ore','coal','iron','gear']){const b=document.createElement('button');b.className='ribbonGood';b.dataset.good=k;b.innerHTML=`<i aria-hidden="true">${icons[k]}</i><b>0</b><span>${ITEMS[k].name}</span>`;b.onclick=()=>api.openBook('flow');$('resourceRibbon').append(b);}
@@ -36,6 +37,8 @@ export function installQoL(api){
   });
   $('buildHint').insertAdjacentHTML('beforeend','<div id="placementTools"></div>');
   $('placementTools').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+    if(b.id==='confirmPaving'&&paveFrom&&paveTo){const r=pave(S(),paveFrom,paveTo);if(r.ok){paveFrom=null;paveTo=null;pavePlan=null;api.changed();api.toast('Paving laid. Faster trips, one tidy stretch.',true);}else api.toast(r.reason);buildKey='';update();return;}
+    if(b.id==='restartPaving'){paveFrom=null;paveTo=null;pavePlan=null;buildKey='';update();return;}
     if(b.dataset.guide){api.chooseBuild(b.dataset.guide);return;}
     if(b.id==='quickSite'&&site){const d=BUILDINGS[api.getView().selectedBuild];fastClear(footprint(site.x,site.y,d.w,d.h));buildKey='';update();}
     if(b.dataset.nudge&&site){const [x,y]=b.dataset.nudge.split(',').map(Number);site.x+=x;site.y+=y;api.setHover(site);buildKey='';update();}
@@ -47,7 +50,7 @@ export function installQoL(api){
   function layout(){layoutQueued=false;const app=$('app'),set=(k,v)=>{const text=Math.ceil(v)+'px';if(app.style.getPropertyValue(k)!==text)app.style.setProperty(k,text);};set('--head-height',document.querySelector('.topbar').getBoundingClientRect().height);set('--dock-height',document.querySelector('.bottombar').getBoundingClientRect().height);set('--status-height',status.getBoundingClientRect().height);api.resize();}
   const observer=new ResizeObserver(()=>{if(!layoutQueued){layoutQueued=true;requestAnimationFrame(layout);}});for(const el of [document.querySelector('.topbar'),document.querySelector('.bottombar'),status])observer.observe(el);
   const footprint=(x,y,w,h)=>{const ids=[];for(let b=y;b<y+h;b++)for(let a=x;a<x+w;a++)if(a>=0&&a<W&&b>=0&&b<H)ids.push(b*W+a);return ids;};
-  function reset(){box=null;dragId=null;site=null;moving=null;land=null;resource=null;buildKey='';landKey='';panel.hidden=true;$('landBtn').classList.remove('active');}
+  function reset(){paveFrom=null;paveTo=null;pavePlan=null;box=null;dragId=null;site=null;moving=null;land=null;resource=null;buildKey='';landKey='';panel.hidden=true;$('landBtn').classList.remove('active');}
   function enterLand(tool='clear'){reset();api.cancelContext();land=tool;panel.hidden=false;$('landBtn').classList.add('active');renderLand();sync();}
   function buildChanged(){reset();sync();}
   function preview(type,x,y){site={x,y};api.setHover(site);buildKey='';update();}
@@ -64,6 +67,7 @@ export function installQoL(api){
   function mapTap(x,y){
     if(x<0||y<0||x>=W||y>=H)return false;
     if(land){if(land==='clear'||land==='keep')applyMarks(footprint(x-brush,y-brush,2*brush+1,2*brush+1),land==='clear');else{const r=land==='plant'?plantTree(S(),x,y):removePath(S(),x,y);api.changed();api.toast(r.ok?(land==='plant'?'A new tree will grow here.':'Path lifted. 1 stone returned.'):r.reason);}renderLand();return true;}
+    if(api.getView().selectedBuild==='path'){if(!paveFrom){paveFrom={x:x+.5,y:y+.5};paveTo=null;}else paveTo={x:x+.5,y:y+.5};pavePlan=paveTo?planPaving(S(),paveFrom,paveTo):null;buildKey='';renderBuild();return true;}
     if(api.getView().selectedBuild||api.isLink())return false;
     const n=S().tiles[y*W+x]?.node;
     if(n){api.cancelContext();resource=y*W+x;panel.hidden=false;landKey='';renderLand();sync();return true;}
@@ -86,6 +90,12 @@ export function installQoL(api){
   function renderBuild(){
     const type=api.getView().selectedBuild;if(!type){buildKey='';return;}
     const s=S(),d=BUILDINGS[type],c=moving!==null?{}:cost(s,type),test=testSite();
+    if(type==='path'){
+      if(paveFrom&&paveTo)pavePlan=planPaving(s,paveFrom,paveTo);
+      const pk=JSON.stringify(['paving',paveFrom,paveTo,pavePlan?.cost,s.stone]);if(pk===buildKey)return;buildKey=pk;
+      $('buildTitle').textContent='Lay a paved walk';$('buildText').textContent='Straight runs, neat corners. Faster folk and wagons.';
+      $('placementTools').innerHTML='<p class="taskcopy">'+(!paveFrom?'Tap where the paving should start.':!paveTo?'Now tap its other end. The route will avoid obstacles.':'Preview the whole stretch, then confirm.')+'</p>'+(pavePlan?'<div class="siteFacts" id="paveCost">'+(pavePlan.path.length?pavePlan.path.length+' tiles · '+pavePlan.cost+' stone (existing paving is free)':pavePlan.reason)+'</div><button class="primary wide" id="confirmPaving" '+(pavePlan.ok?'':'disabled')+'>Lay this paving</button>':'')+(paveFrom?'<button class="secondary wide" id="restartPaving">Choose a new start</button>':'');return;
+    }
     const nodes=site?footprint(site.x,site.y,d.w,d.h).filter(i=>s.tiles[i].node):[],allMarked=nodes.length&&nodes.every(i=>s.tiles[i].node.clear);
     const key=JSON.stringify([type,moving,site,c,Object.keys(c).map(k=>stock(s,k)),test,nodes.length,allMarked]);if(buildKey===key)return;buildKey=key;
     $('buildTitle').textContent=moving!==null?`Move ${d.short.toLowerCase()}`:d.name;
@@ -93,8 +103,8 @@ export function installQoL(api){
     let html=moving!==null?'<p class="taskcopy">Free to move. Keeps residents, cargo and production.</p>':'<div class="costchips">'+(Object.entries(c).filter(([,n])=>n>0).map(([k,n])=>`<span class="goodchip ${stock(s,k)>=n?'enough':'short'}"><i aria-hidden="true">${icons[k]}</i>${n} ${ITEMS[k].name.toLowerCase()}${stock(s,k)<n?` <b>(${Math.ceil(n-stock(s,k))} needed)</b>`:' ✓'}</span>`).join('')||'<span class="goodchip enough">Your first home is free</span>')+'</div>';
     if(moving===null)html=buildingGuideHTML(type,s,!!site)+html;
     if(RECIPES[type]&&moving===null)html+='<label class="autoConnect"><input type="checkbox" id="autoConnect" '+(s.bloom.autoConnect?'checked':'')+'> Auto-connect storage <small>Real delivery wagons; you can change routes later.</small></label>';
-    if(type==='path'){html+='<p class="taskcopy">Tap grass to place one tile. Use Land → Lift path to remove it.</p>';}
-    else if(site){html+=`<div class="placementState ${test?.ok?'ready':''}" role="status">${test?.ok?'✓ Ready. Place it here?':nodes.length?(allMarked?`✂ Clearing ${nodes.length} remaining patches…`:`✂ ${nodes.length} resource patches in the way`):esc(test?.reason||'Choose a site.')}</div>`;
+    if(type==='path'){html+='';}
+    else if(site){const plan=plotPlan(s,type,site.x,site.y,moving);html+='<div class="siteLegend"><span><i class="green"></i>Fits</span><span><i class="amber"></i>Clear first</span><span><i class="red"></i>Blocked</span></div>';if(plan.geometry.ok){html+='<div class="siteFacts">'+(plan.hub?'Loading pad → '+BUILDINGS[plan.hub.type].short+' #'+plan.hub.id+(s.bloom.autoConnect?'. A shared delivery lane will be laid.':'. Nearby storage; automatic links are off.'):'One connected entrance stays open.')+(RECIPES[type]?.power?' Wind estimate: '+Math.round(plan.wind*100)+'%.':'')+(plan.geometry.refund?' '+plan.geometry.refund+' covered paving stones will be returned.':'')+'</div>';}html+=`<div class="placementState ${test?.ok?'ready':''}" role="status">${test?.ok?'✓ Ready. Place it here?':nodes.length?(allMarked?`✂ Clearing ${nodes.length} remaining patches…`:`✂ ${nodes.length} resource patches in the way`):esc(test?.reason||'Choose a site.')}</div>`;
       html+='<div class="nudgeRow" aria-label="Adjust building position">'+[['-1,0','←'],['0,-1','↑'],['0,1','↓'],['1,0','→']].map(([k,t])=>`<button class="secondary" data-nudge="${k}" aria-label="Move preview ${ {'←':'left','↑':'up','↓':'down','→':'right'}[t]}">${t}</button>`).join('')+'</div>';
       html+=`<button class="primary wide" id="confirmBuild" ${test?.ok?'':'disabled'}>${moving!==null?'Move here':'Build here'}</button>`;
       if(nodes.length)html+=`<button class="primary wide" id="quickSite">Clear site now · keep half the materials</button><button class="secondary wide" id="clearSite" ${allMarked?'disabled':''}>${allMarked?'Your folk are clearing this site':'Clear this site first'}</button>`;
@@ -132,10 +142,10 @@ export function installQoL(api){
   }
   function activeContext(){return api.getView().selectedBuild||api.getView().selection||land||resource!==null||api.isLink();}
   function draw(c){
-    c.save();for(let i=0;i<S().tiles.length;i++)if(S().tiles[i].node?.clear){const x=i%W*TILE,y=Math.floor(i/W)*TILE;c.fillStyle='#f7d78266';c.fillRect(x,y,TILE,TILE);c.strokeStyle='#fff5ca';c.lineWidth=1;c.strokeRect(x+.5,y+.5,15,15);c.beginPath();c.moveTo(x+5,y+5);c.lineTo(x+11,y+11);c.moveTo(x+11,y+5);c.lineTo(x+5,y+11);c.stroke();}
+    c.save();if(paveFrom){c.strokeStyle='#fae3a0';c.lineWidth=2;c.strokeRect(paveFrom.x*TILE-5,paveFrom.y*TILE-5,10,10);}if(pavePlan?.path?.length){c.strokeStyle=pavePlan.ok?'#f5e0a2':'#d49380';c.lineWidth=5;c.setLineDash([3,2]);c.beginPath();pavePlan.path.forEach((p,j)=>j?c.lineTo(p.x*TILE,p.y*TILE):c.moveTo(p.x*TILE,p.y*TILE));c.stroke();c.setLineDash([]);}for(let i=0;i<S().tiles.length;i++)if(S().tiles[i].node?.clear){const x=i%W*TILE,y=Math.floor(i/W)*TILE;c.fillStyle='#f7d78266';c.fillRect(x,y,TILE,TILE);c.strokeStyle='#fff5ca';c.lineWidth=1;c.strokeRect(x+.5,y+.5,15,15);c.beginPath();c.moveTo(x+5,y+5);c.lineTo(x+11,y+11);c.moveTo(x+11,y+5);c.lineTo(x+5,y+11);c.stroke();}
     if(box){const x=Math.min(box.x,box.ex)*TILE,y=Math.min(box.y,box.ey)*TILE,w=(Math.abs(box.ex-box.x)+1)*TILE,h=(Math.abs(box.ey-box.y)+1)*TILE;c.fillStyle='#f2ce7040';c.fillRect(x,y,w,h);c.strokeStyle='#fff2ad';c.lineWidth=1.5;c.setLineDash([3,2]);c.strokeRect(x,y,w,h);c.setLineDash([]);}
     const h=api.getView().hover;if(land&&h&&shape!=='box'){const r=land==='clear'||land==='keep'?brush:0;c.strokeStyle='#fff6cf';c.lineWidth=1;c.strokeRect((h.x-r)*TILE,(h.y-r)*TILE,(r*2+1)*TILE,(r*2+1)*TILE);}c.restore();
   }
   function modalChanged(){sync();$('toast').hidden=true;}
-  layout();return {pointerDown,pointerMove,pointerUp,cancelDrag,update,sync,reset,buildChanged,preview,startMove,testSite,mapTap,draw,modalChanged,get hasSite(){return !!site;},get site(){return site;}};
+  layout();return {pointerDown,pointerMove,pointerUp,cancelDrag,update,sync,reset,buildChanged,preview,startMove,testSite,mapTap,draw,modalChanged,get movingId(){return moving;},get hasSite(){return !!site;},get site(){return site;}};
 }

@@ -1,5 +1,9 @@
 # Littlefolk
 
+## Village Works
+
+**Version 2.3.0:** stable building placement, visible shared delivery lanes, two-point paving, clearer supply inspection, and progression repairs. See [Village Works](VILLAGE-WORKS.md) for the update guide. Older release notes follow.
+
 ## Hearth & Harvest · 2.2.0
 
 Five village projects, meals and village spirit, effortless area clearing, automatic delivery loops, building purpose cards, more color, and 5× speed. See **[Hearth & Harvest](HEARTH-AND-HARVEST.md)** for the current guide. Its current behavior takes precedence over older release notes below.

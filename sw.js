@@ -1,6 +1,6 @@
 /* Cache complete releases together. Existing games opt into an update after saving. */
-const CACHE = 'littlefolk-2.2.0';
-const ASSETS = ['./', './index.html', './world.js', './app.js', './industry.js', './industry-ui.js', './industry.css', './qol-ui.js', './qol.css', './bloom.js', './bloom-ui.js', './bloom.css', './manifest.webmanifest', './icon.svg'];
+const CACHE = 'littlefolk-2.3.0';
+const ASSETS = ['./', './index.html', './world.js', './app.js', './industry.js', './industry-ui.js', './industry.css', './qol-ui.js', './qol.css', './bloom.js', './bloom-ui.js', './bloom.css', './manifest.webmanifest', './icon.svg', './lanes.js', './lanes-ui.js', './lanes.css'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
 });

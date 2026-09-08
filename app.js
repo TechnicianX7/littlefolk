@@ -1,6 +1,7 @@
 import { W,H,TILE,BUILDINGS,COLORS,createWorld,place,placement,cost,step,upgrade,ringBell,snapshot,restore,buildingAt,describeFolk } from './world.js';
 
 import { installIndustryUI, drawIndustryBuilding } from './industry-ui.js';
+import {drawPlot,plotPlan} from './lanes-ui.js';
 import {installQoL} from './qol-ui.js';
 import {installBloomUI,drawBloomDecor} from './bloom-ui.js';
 let factoryUI=null,qolUI=null,bloomUI=null;
@@ -115,13 +116,13 @@ function paintTerrain(){
     const d=Math.hypot(x-s.hearth.x,y-s.hearth.y);
     if(d<2.6){rect(tc,px,py,16,16,['#bbb47d','#c2b983','#bdb780'][Math.floor(n*3)]);if(n>.5)rect(tc,px+4,py+9,3,1,'#aaa373');}
     else if(n>.2){const dx=3+Math.floor(n*7),dy=4+Math.floor(mod(n*9,1)*7);rect(tc,px+dx,py+dy,1,3,'#8da85f');rect(tc,px+dx-2,py+dy+1,1,2,'#98b06a');rect(tc,px+dx+2,py+dy+1,1,2,'#9ab36a');if(n>.8&&!t.node){rect(tc,px+dx,py+dy,1,1,n>.93?'#e6ce9b':'#ced48a');}}
-    if(t.path){rect(tc,px+3,py+1,10,14,'#b9b489');rect(tc,px+1,py+4,14,8,'#b9b489');rect(tc,px+3,py+3,6,4,'#d0c9a3');rect(tc,px+8,py+9,5,3,'#dbd0a7');rect(tc,px+3,py+11,3,2,'#999e77');}
+    if(t.path){const linked=(a,b)=>a>=0&&b>=0&&a<W&&b<H&&s.tiles[b*W+a].path;rect(tc,px+3,py+3,10,10,'#a4aa92');rect(tc,px+4,py+4,8,8,'#c8cbb1');if(linked(x-1,y))rect(tc,px,py+4,8,8,'#c8cbb1');if(linked(x+1,y))rect(tc,px+8,py+4,8,8,'#c8cbb1');if(linked(x,y-1))rect(tc,px+4,py,8,8,'#c8cbb1');if(linked(x,y+1))rect(tc,px+4,py+8,8,8,'#c8cbb1');rect(tc,px+5,py+6,6,1,'#a6ad98');rect(tc,px+7,py+4,1,7,'#e0dfc5');}
   }
   terrainDirty=false;
 }
 function paintIcons(){
   for(const el of document.querySelectorAll('[data-icon]')){const c=el.getContext('2d');c.clearRect(0,0,el.width,el.height);const name=el.dataset.icon;
-    if(name==='wood'){log(c,3,8);log(c,7,13);}else if(name==='stone'){rock(c,12,18,true);}else if(name==='folk'){folk(c,12,19,{id:1,color:COLORS[0],hat:1},1);}else if(name==='path'){rect(c,8,5,7,5,'#b5b78e');rect(c,15,14,8,5,'#c9c4a0');rect(c,4,23,10,5,'#929e7b');}else{c.drawImage(buildingSprite(name),0,0,48,44);}}
+    if(name==='wood'){log(c,3,8);log(c,7,13);}else if(name==='stone'){rock(c,12,18,true);}else if(name==='folk'){folk(c,12,19,{id:1,color:COLORS[0],hat:1},1);}else if(name==='path'){rect(c,7,5,9,27,'#929e7b');rect(c,7,23,25,9,'#929e7b');rect(c,9,5,5,25,'#d2d0b0');rect(c,9,25,23,5,'#d2d0b0');for(let y=9;y<28;y+=6)rect(c,9,y,5,1,'#a4ae95');}else{c.drawImage(buildingSprite(name),0,0,48,44);}}
   const b=$('brandIcon').getContext('2d');lantern(b,10,21);
   const c=$('welcomeArt').getContext('2d');rect(c,6,39,101,2,'#d6dcc0');rect(c,12,41,87,2,'#e4e5d1');c.drawImage(buildingSprite('hut'),9,-1);folk(c,63,39,{id:1,color:COLORS[0],hat:1},2,1.5);folk(c,83,39,{id:2,color:COLORS[2],hat:2},2,1.25);flower(c,100,37);flower(c,6,38,'#ccb8d1');
 }
@@ -170,7 +171,7 @@ function draw(){
     for(let i=0;i<6;i++){const x=mod(time*1.8+i*137,W*TILE+150)-75,y=30+i*89+Math.sin(time*.025+i)*10;ctx.fillStyle='#52683c09';ctx.fillRect(x,y,60,10);ctx.fillRect(x+12,y-7,40,24);ctx.fillRect(x+35,y-12,30,29);}
     for(let i=0;i<12;i++){const x=mod(i*61+time*1.8,W*TILE),y=mod(i*47+Math.sin(time*.8+i)*6,H*TILE);rect(ctx,x,y,1,1,'#eef0ba77');}
   }
-  if(hover&&selectedBuild){const d=BUILDINGS[selectedBuild],valid=previewPlacement().ok,x=hover.x*TILE,y=hover.y*TILE;rect(ctx,x,y,d.w*TILE,d.h*TILE,valid?'#f8f3bc66':'#c17f7155');ctx.strokeStyle=valid?'#f9efbe':'#ac605a';ctx.lineWidth=1;ctx.strokeRect(x+.5,y+.5,d.w*TILE-1,d.h*TILE-1);if(selectedBuild!=='path'){ctx.globalAlpha=.6;ctx.drawImage(buildingSprite(selectedBuild),x-8,y-14);ctx.globalAlpha=1;}}
+  if(hover&&selectedBuild){drawPlot(ctx,s,selectedBuild,hover,qolUI?.movingId??null);if(selectedBuild!=='path'){ctx.globalAlpha=.6;ctx.drawImage(buildingSprite(selectedBuild),hover.x*TILE-8,hover.y*TILE-14);ctx.globalAlpha=1;}}
   ctx.setTransform(1,0,0,1,0,0);
   if(night>0){rect(ctx,0,0,width,height,`rgba(24,43,63,${night*.45})`);}
   if(night>.05||s.meeting){const p=worldToScreen((s.hearth.x+.7)*TILE,(s.hearth.y+.3)*TILE);const radius=85*cam.zoom/3;const gradient=ctx.createRadialGradient(p.x,p.y,1,p.x,p.y,radius);gradient.addColorStop(0,`rgba(255,220,136,${.22+night*.17})`);gradient.addColorStop(1,'rgba(255,220,136,0)');ctx.fillStyle=gradient;ctx.fillRect(p.x-radius,p.y-radius,radius*2,radius*2);
@@ -236,7 +237,7 @@ function onTap(x,y){
 function buildDock(){for(const [type,d] of Object.entries(BUILDINGS)){const b=document.createElement('button');b.className='buildcard';b.dataset.build=type;b.setAttribute('aria-pressed','false');b.innerHTML=`<span class="lockmark" aria-hidden="true">⌑</span><canvas width="48" height="44" data-icon="${type}" aria-hidden="true"></canvas><b>${d.short}</b><small></small>`;b.addEventListener('click',()=>{bloomUI?.hidePeek();selectBuild(type);});b.addEventListener('pointerenter',e=>{if(e.pointerType==='mouse')bloomUI?.peek(type);});b.addEventListener('pointerleave',()=>bloomUI?.hidePeek());b.addEventListener('focus',()=>bloomUI?.peek(type));b.addEventListener('blur',()=>bloomUI?.hidePeek());$('buildings').append(b);}}
 function save(manual=false){
   if(saveBlocked){if(manual)toast('Saving is paused to protect an unreadable save, or storage is blocked. Export a backup, then start a new island to replace it.',false,6500);return false;}
-  try{const raw=JSON.stringify(snapshot(s));if(lastGoodSave){if(!JSON.parse(lastGoodSave).bloom&&!localStorage.getItem('littlefolk.pre22.save'))localStorage.setItem('littlefolk.pre22.save',lastGoodSave);localStorage.setItem(BACKUP,lastGoodSave);}localStorage.setItem(SAVE,raw);lastGoodSave=raw;$('saveStatus').textContent=`Saved on this device · ${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}${offlineReady?' · Offline ready':''}`;if(manual)toast('Your little world is saved.');return true;}catch{$('saveStatus').textContent='Storage is unavailable. Export a save to keep your village.';if(manual)toast('This browser could not store the save. Use Export save instead.');return false;}
+  try{const raw=JSON.stringify(snapshot(s));if(lastGoodSave){if(!localStorage.getItem('littlefolk.pre23.save'))localStorage.setItem('littlefolk.pre23.save',lastGoodSave);if(!JSON.parse(lastGoodSave).bloom&&!localStorage.getItem('littlefolk.pre22.save'))localStorage.setItem('littlefolk.pre22.save',lastGoodSave);localStorage.setItem(BACKUP,lastGoodSave);}localStorage.setItem(SAVE,raw);lastGoodSave=raw;$('saveStatus').textContent=`Saved on this device · ${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}${offlineReady?' · Offline ready':''}`;if(manual)toast('Your little world is saved.');return true;}catch{$('saveStatus').textContent='Storage is unavailable. Export a save to keep your village.';if(manual)toast('This browser could not store the save. Use Export save instead.');return false;}
 }
 function downloadJSON(text,name){const blob=new Blob([text],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}
 function savePrefs(){try{localStorage.setItem(PREFS,JSON.stringify(prefs));}catch{}$('soundBtn').textContent=prefs.sound?'On':'Off';$('soundBtn').setAttribute('aria-pressed',String(prefs.sound));$('motionBtn').textContent=prefs.reduced?'Reduced':'Full';$('motionBtn').setAttribute('aria-pressed',String(prefs.reduced));}
@@ -261,7 +262,7 @@ function fatal(error){report(error,'frame');frameFault=true;paused=true;
     for(const f of s.folk){f.path=[];f.mode='idle';f.timer=.2;f.target=null;}
     frameFault=false;paused=false;accumulator=0;lastFrame=performance.now();box.hidden=true;resetPointers();
   };
-  const exportLog=document.createElement('button');exportLog.className='secondary';exportLog.textContent='Export diagnostics';exportLog.onclick=()=>downloadJSON(JSON.stringify({version:'2.2.0',errors:diagnostics},null,2),'littlefolk-diagnostics.json');
+  const exportLog=document.createElement('button');exportLog.className='secondary';exportLog.textContent='Export diagnostics';exportLog.onclick=()=>downloadJSON(JSON.stringify({version:'2.3.0',errors:diagnostics},null,2),'littlefolk-diagnostics.json');
   box.append(text,resume,exportLog);
 }
 window.addEventListener('error',e=>report(e.error||e.message));window.addEventListener('unhandledrejection',e=>report(e.reason,'promise'));
@@ -321,7 +322,7 @@ function frame(now){
   }catch(e){fatal(e);}
 }
 buildDock();paintIcons();savePrefs();
-factoryUI=installIndustryUI({getState:()=>s,toast,save,openModal,closeModal,sound,worldToScreen,
+factoryUI=installIndustryUI({getState:()=>s,getView:()=>({selection,selectedBuild}),inspectBuilding:id=>inspect('building',id),toast,save,openModal,closeModal,sound,worldToScreen,
   reduced:()=>prefs.reduced,clearSelection:()=>{bloomUI?.hidePeek();qolUI?.reset();selectedBuild=null;selection=null;hover=null;$('inspector').hidden=true;$('buildHint').hidden=true;},
   changed:()=>{terrainDirty=true;previewCache=null;processEvents();save();updateUI();},
   chooseBuild:type=>{factoryUI.changeCategory(factoryUI.categoryFor(type));selectBuild(type);},move:id=>qolUI?.startMove(id),onContext:()=>qolUI?.sync(),
