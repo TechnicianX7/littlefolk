@@ -1,0 +1,69 @@
+name: Village Works integration
+on:
+  push:
+    branches: [build/village-works]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: village-works-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply hash-verified source integration
+        run: python3 tools/works_integrate.py
+      - name: Check JavaScript
+        run: npm run check
+      - name: Test placement, lanes, cargo conservation and complete progression
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test --test-concurrency=1 tests/*.test.mjs | tee unit-results.txt
+      - name: Prepare browser engines
+        run: |
+          npm install --no-save --ignore-scripts playwright
+          npx playwright install --with-deps chromium webkit
+      - name: Original village, saves and offline cache
+        run: node tests/browser.mjs
+      - name: Factory controls, recovery and legacy villages
+        run: node tests/timber.browser.mjs
+      - name: Clearing, relocation and panel boundaries
+        run: node tests/qol.browser.mjs
+      - name: Food, wishes, guides and accelerated play
+        run: node tests/bloom.browser.mjs
+      - name: Delivery lanes, plot previews and touch paving
+        run: node tests/lanes.browser.mjs
+      - name: Commit only tested runtime changes to development
+        shell: bash
+        run: |
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add world.js industry.js bloom.js app.js qol-ui.js industry-ui.js index.html sw.js package.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'Integrate verified Littlefolk 2.3: Village Works'
+            git push origin HEAD:build/village-works
+          fi
+          git rev-parse HEAD
+      - name: Keep sources, reports and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: village-works-checked-build
+          retention-days: 7
+          path: |
+            *.js
+            *.css
+            *.html
+            *.json
+            *.webmanifest
+            *.svg
+            *.md
+            tests/
+            tools/works_*
+            artifacts/
+            unit-results.txt
